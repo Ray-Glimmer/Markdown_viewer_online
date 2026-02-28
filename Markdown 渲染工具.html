@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown 渲染工具</title>
+    <style>
+        :root { 
+            --apple-blue: #0066cc; 
+            --apple-red: #d60017; 
+            --bg: #f5f5f7; 
+            --card-bg: #ffffff;
+            --text-main: #1d1d1f; 
+            --text-secondary: #86868b;
+            --border: #d2d2d7; 
+            --accent-bg: #f5f5f7;
+            --highlight: #fff3cd;
+            --highlight-current: #ffc107;
+            --code-bg: #f5f5f7;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; 
+            background: var(--bg); 
+            color: var(--text-main); 
+            line-height: 1.6;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
+
+        .container { width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--card-bg); }
+
+        .header { padding: 15px 25px; background: #fff; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .header-title { font-weight: 600; font-size: 20px; color: var(--apple-blue); letter-spacing: -0.5px; }
+
+        .editor-area { display: flex; flex: 1; overflow: hidden; }
+        .pane { flex: 1; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+        .pane:first-child { border-right: 1px solid var(--border); }
+
+        /* 搜索组件 */
+        .search-box { background: #f8f9fa; border-bottom: 1px solid var(--border); padding: 10px 15px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+        .search-input { flex: 1; padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; outline: none; }
+        .search-info { font-size: 11px; color: var(--text-secondary); min-width: 50px; text-align: center; font-family: monospace; }
+        .search-btn { cursor: pointer; color: var(--apple-blue); background: none; border: none; font-size: 16px; opacity: 0.7; transition: 0.2s; }
+        .search-btn:hover { opacity: 1; transform: scale(1.1); }
+
+        /* 内容区 */
+        textarea, #preview { flex: 1; padding: 35px; overflow-y: auto; outline: none; border: none; font-size: 15px; }
+        textarea { font-family: "SF Mono", Menlo, Consolas, monospace; background: #fafafa; color: #424245; resize: none; line-height: 1.5; }
+
+        /* --- Markdown 渲染样式 --- */
+        #preview h1, #preview h2, #preview h3, #preview h4, #preview h5, #preview h6 { margin: 1.5em 0 0.8em; line-height: 1.2; color: #000; }
+        #preview h1 { font-size: 1.8em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+        #preview h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+        #preview h3 { font-size: 1.3em; padding-left: 12px; border-left: 4px solid var(--apple-blue); }
+        
+        #preview p { margin-bottom: 1.2em; }
+        #preview strong { color: var(--apple-red); font-weight: 600; }
+        #preview em { font-style: italic; }
+        #preview del { color: var(--text-secondary); }
+        
+        #preview blockquote { margin: 1.5em 0; padding: 0.5em 20px; color: #4f4f4f; border-left: 4px solid var(--border); background: #f9f9f9; }
+        
+        #preview code { font-family: "SF Mono", monospace; background: var(--code-bg); padding: 0.2em 0.4em; border-radius: 4px; font-size: 85%; color: #d60017; }
+        #preview pre { margin: 1.5em 0; padding: 16px; overflow: auto; background: var(--code-bg); border-radius: 8px; border: 1px solid var(--border); }
+        #preview pre code { background: none; padding: 0; color: #1d1d1f; font-size: 14px; color: inherit; }
+
+        #preview ul, #preview ol { margin: 1em 0 1.5em 1.5em; }
+        #preview li { margin-bottom: 0.5em; list-style-position: outside; }
+        
+        /* 任务列表专用样式 */
+        .task-list-item { list-style-type: none !important; margin-left: -1.5em !important; }
+        .task-list-item input[type="checkbox"] { margin-right: 8px; vertical-align: middle; cursor: default; }
+        
+        #preview hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+        #preview img { max-width: 100%; border-radius: 8px; }
+        
+        .table-wrapper { margin: 1.5em 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th { background: var(--accent-bg); font-weight: 600; padding: 12px; border: 1px solid var(--border); text-align: left; }
+        td { padding: 12px; border: 1px solid var(--border); }
+
+        mark { background-color: var(--highlight); color: inherit; }
+        mark.current { background-color: var(--highlight-current); box-shadow: 0 0 4px rgba(0,0,0,0.2); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header"><div class="header-title">Markdown 渲染工具</div></div>
+    <div class="editor-area">
+        <div class="pane">
+            <div class="search-box">
+                <input type="text" class="search-input" placeholder="搜索源码..." id="editorSearchInput">
+                <span class="search-info" id="editorSearchCount">0/0</span>
+                <button class="search-btn" id="editorSearchBtn">🔍</button>
+            </div>
+            <textarea id="editor" spellcheck="false" placeholder="在此输入 Markdown..."></textarea>
+        </div>
+        <div class="pane">
+            <div class="search-box">
+                <input type="text" class="search-input" placeholder="搜索预览..." id="previewSearchInput">
+                <span class="search-info" id="previewSearchCount">0/0</span>
+                <button class="search-btn" id="previewSearchBtn">🔍</button>
+            </div>
+            <div id="preview"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const editor = document.getElementById('editor');
+    const preview = document.getElementById('preview');
+
+    // --- 解析逻辑 ---
+    const escape = (str) => str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m]));
+
+    function parseInline(text) {
+        let res = escape(text);
+        // 行内代码 (防止内部被进一步解析)
+        res = res.replace(/`([^`]+)`/g, '<code>$1</code>');
+        // 图片
+        res = res.replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1">');
+        // 链接
+        res = res.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>');
+        // 加粗斜体
+        res = res.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
+        // 加粗
+        res = res.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        // 斜体
+        res = res.replace(/[\*_](.*?)[\*_]/g, '<em>$1</em>');
+        // 删除线
+        res = res.replace(/~~(.*?)~~/g, '<del>$1</del>');
+        return res;
+    }
+
+    function renderMarkdown(md) {
+        if (!md) return "";
+        const rawLines = md.replace(/\\n/g, '\n').split('\n');
+        let html = [];
+        let state = { list: null, codeBlock: false, quote: false };
+
+        const closeAll = () => {
+            if (state.list) { html.push(state.list === 'ul' ? '</ul>' : '</ol>'); state.list = null; }
+            if (state.quote) { html.push('</div></blockquote>'); state.quote = false; }
+        };
+
+        for (let i = 0; i < rawLines.length; i++) {
+            let line = rawLines[i];
+            let trimmed = line.trim();
+
+            // 1. 代码块逻辑 (优先级最高)
+            if (trimmed.startsWith('```')) {
+                if (!state.codeBlock) {
+                    closeAll();
+                    html.push('<pre><code>');
+                    state.codeBlock = true;
+                } else {
+                    html.push('</code></pre>');
+                    state.codeBlock = false;
+                }
+                continue;
+            }
+            if (state.codeBlock) {
+                html.push(escape(line) + '\n');
+                continue;
+            }
+
+            // 2. 标题
+            const hMatch = trimmed.match(/^(#{1,6})\s+(.*)/);
+            if (hMatch) {
+                closeAll();
+                const level = hMatch[1].length;
+                html.push(`<h${level}>${parseInline(hMatch[2])}</h${level}>`);
+                continue;
+            }
+
+            // 3. 分隔线
+            if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+                closeAll();
+                html.push('<hr>');
+                continue;
+            }
+
+            // 4. 引用块
+            if (trimmed.startsWith('>')) {
+                if (!state.quote) {
+                    closeAll();
+                    html.push('<blockquote><div>');
+                    state.quote = true;
+                }
+                html.push(`<p>${parseInline(trimmed.replace(/^>\s*/, ''))}</p>`);
+                continue;
+            }
+
+            // 5. 列表逻辑 (含任务列表修复)
+            const ulMatch = trimmed.match(/^[\*\-\+]\s+(.*)/);
+            const olMatch = trimmed.match(/^\d+\.\s+(.*)/);
+            const listMatch = ulMatch || olMatch;
+
+            if (listMatch) {
+                const type = ulMatch ? 'ul' : 'ol';
+                if (state.list !== type) {
+                    closeAll();
+                    html.push(`<${type}>`);
+                    state.list = type;
+                }
+                
+                let content = listMatch[1];
+                let itemClass = "";
+                let checkbox = "";
+
+                // 检查是否是任务列表 [ ] 或 [x]
+                if (content.startsWith('[ ] ')) {
+                    itemClass = ' class="task-list-item"';
+                    checkbox = '<input type="checkbox" disabled> ';
+                    content = content.substring(4);
+                } else if (content.startsWith('[x] ')) {
+                    itemClass = ' class="task-list-item"';
+                    checkbox = '<input type="checkbox" checked disabled> ';
+                    content = content.substring(4);
+                }
+
+                // 关键点：checkbox HTML 字符串不进入 parseInline，只对文本内容进行解析
+                html.push(`<li${itemClass}>${checkbox}${parseInline(content)}</li>`);
+                continue;
+            }
+
+            // 6. 表格
+            if (trimmed.startsWith('|') && i + 1 < rawLines.length && /^\|[\s|:-]+$/.test(rawLines[i+1].trim())) {
+                closeAll();
+                let table = '<div class="table-wrapper"><table><thead><tr>';
+                trimmed.split('|').filter(s => s.trim()).forEach(h => table += `<th>${parseInline(h.trim())}</th>`);
+                table += '</tr></thead><tbody>';
+                i++; // 跳过分隔行
+                while (i + 1 < rawLines.length && rawLines[i+1].trim().startsWith('|')) {
+                    i++;
+                    const cells = rawLines[i].split('|').filter((c,idx,arr) => !((idx===0 || idx===arr.length-1) && c.trim()===""));
+                    table += '<tr>' + cells.map(c => `<td>${parseInline(c.trim())}</td>`).join('') + '</tr>';
+                }
+                html.push(table + '</tbody></table></div>');
+                continue;
+            }
+
+            // 7. 普通段落或空行
+            if (trimmed === "") {
+                closeAll();
+            } else {
+                if (!state.list && !state.quote) {
+                    html.push(`<p>${parseInline(line)}</p>`);
+                }
+            }
+        }
+        closeAll();
+        return html.join('');
+    }
+
+    // --- 搜索逻辑 ---
+    let editorMatches = [], editorIdx = -1;
+    function searchEditor() {
+        const term = document.getElementById('editorSearchInput').value;
+        const text = editor.value;
+        editorMatches = [];
+        if (!term) { document.getElementById('editorSearchCount').innerText = "0/0"; return; }
+        let i = text.indexOf(term);
+        while (i !== -1) { editorMatches.push(i); i = text.indexOf(term, i + 1); }
+        document.getElementById('editorSearchCount').innerText = `0/${editorMatches.length}`;
+    }
+    function jumpEditor() {
+        if (!editorMatches.length) return;
+        editorIdx = (editorIdx + 1) % editorMatches.length;
+        editor.focus();
+        const term = document.getElementById('editorSearchInput').value;
+        editor.setSelectionRange(editorMatches[editorIdx], editorMatches[editorIdx] + term.length);
+        document.getElementById('editorSearchCount').innerText = `${editorIdx + 1}/${editorMatches.length}`;
+    }
+
+    let previewMatches = [], previewIdx = -1;
+    function searchPreview() {
+        const term = document.getElementById('previewSearchInput').value;
+        preview.innerHTML = renderMarkdown(editor.value); // 搜索前重绘
+        previewMatches = [];
+        if (!term) { document.getElementById('previewSearchCount').innerText = "0/0"; return; }
+        
+        const walker = document.createTreeWalker(preview, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        let n; while (n = walker.nextNode()) nodes.push(n);
+        
+        nodes.forEach(node => {
+            const val = node.nodeValue;
+            const reg = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            if (reg.test(val)) {
+                const frag = document.createDocumentFragment();
+                val.split(reg).forEach(p => {
+                    if (p.toLowerCase() === term.toLowerCase()) {
+                        const m = document.createElement('mark'); m.textContent = p;
+                        frag.appendChild(m); previewMatches.push(m);
+                    } else if (p) frag.appendChild(document.createTextNode(p));
+                });
+                node.parentNode.replaceChild(frag, node);
+            }
+        });
+        document.getElementById('previewSearchCount').innerText = `0/${previewMatches.length}`;
+    }
+    function jumpPreview() {
+        if (!previewMatches.length) return;
+        previewIdx = (previewIdx + 1) % previewMatches.length;
+        previewMatches.forEach((m, i) => m.classList.toggle('current', i === previewIdx));
+        previewMatches[previewIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('previewSearchCount').innerText = `${previewIdx + 1}/${previewMatches.length}`;
+    }
+
+    // 事件绑定
+    editor.addEventListener('input', () => {
+        preview.innerHTML = renderMarkdown(editor.value);
+        if (document.getElementById('editorSearchInput').value) searchEditor();
+        if (document.getElementById('previewSearchInput').value) searchPreview();
+    });
+    document.getElementById('editorSearchInput').addEventListener('input', searchEditor);
+    document.getElementById('editorSearchInput').addEventListener('keydown', e => { if(e.key==='Enter') { e.preventDefault(); jumpEditor(); } });
+    document.getElementById('editorSearchBtn').addEventListener('click', jumpEditor);
+    
+    document.getElementById('previewSearchInput').addEventListener('input', searchPreview);
+    document.getElementById('previewSearchInput').addEventListener('keydown', e => { if(e.key==='Enter') { e.preventDefault(); jumpPreview(); } });
+    document.getElementById('previewSearchBtn').addEventListener('click', jumpPreview);
+
+    // 初始展示
+    editor.value = "# Markdown 渲染测试\n\n### 任务列表演示 (已修复)\n- [x] 这是一项已完成的任务\n- [ ] 这是一项待办任务\n- [ ] 任务列表支持行内格式，如 **加粗**\n\n---\n\n### 其它功能\n> 引用块支持\n\n```javascript\n// 代码块支持\nconsole.log(\"Hello World\");\n```\n\n| 项目 | 状态 | 备注 |\n| :--- | :--- | :--- |\n| 搜索 | **实时** | Enter 跳转 |\n| 渲染 | **全语法** | Apple 财务风格 |";
+    preview.innerHTML = renderMarkdown(editor.value);
+</script>
+</body>
+</html>
