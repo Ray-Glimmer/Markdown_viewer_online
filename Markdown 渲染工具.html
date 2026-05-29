@@ -1,0 +1,1287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown 渲染工具</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+    <style>
+        :root {
+            --apple-blue: #0066cc;
+            --apple-red: #d60017;
+            --bg: #f5f5f7;
+            --card-bg: #ffffff;
+            --text-main: #1d1d1f;
+            --text-secondary: #86868b;
+            --border: #d2d2d7;
+            --accent-bg: #f5f5f7;
+            --highlight: #fff3cd;
+            --highlight-current: #ffc107;
+            --code-bg: #f6f8fa;
+            --success: #248a3d;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            line-height: 1.6;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
+
+        .container { width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--card-bg); }
+
+        .header {
+            padding: 12px 20px;
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .header-title { font-weight: 600; font-size: 18px; color: var(--apple-blue); letter-spacing: -0.3px; }
+        .header-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+        .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .btn {
+            padding: 6px 12px;
+            font-size: 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: #fff;
+            color: var(--text-main);
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+            white-space: nowrap;
+        }
+        .btn:hover { background: var(--accent-bg); border-color: #b8b8bd; }
+        .btn-primary { background: var(--apple-blue); color: #fff; border-color: var(--apple-blue); }
+        .btn-primary:hover { background: #0055aa; }
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            user-select: none;
+        }
+        .toggle-label input { accent-color: var(--apple-blue); }
+
+        .status-bar {
+            font-size: 11px;
+            color: var(--text-secondary);
+            padding: 4px 20px 8px;
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .status-bar .fixed { color: var(--success); }
+
+        .editor-area { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+        .pane { flex: 1; display: flex; flex-direction: column; position: relative; overflow: hidden; min-width: 0; }
+        .pane-editor { border-right: 1px solid var(--border); }
+
+        .search-box {
+            background: #f8f9fa;
+            border-bottom: 1px solid var(--border);
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .search-input {
+            flex: 1;
+            min-width: 0;
+            padding: 6px 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+        }
+        .search-input:focus { border-color: var(--apple-blue); box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.15); }
+        .search-info { font-size: 11px; color: var(--text-secondary); min-width: 44px; text-align: center; font-family: ui-monospace, monospace; }
+        .search-btn {
+            cursor: pointer;
+            color: var(--apple-blue);
+            background: none;
+            border: none;
+            font-size: 15px;
+            opacity: 0.75;
+            padding: 4px;
+        }
+        .search-btn:hover { opacity: 1; }
+
+        textarea, #preview {
+            flex: 1;
+            padding: 24px 28px;
+            overflow-y: auto;
+            outline: none;
+            border: none;
+            font-size: 15px;
+            min-height: 0;
+        }
+        textarea {
+            font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+            background: #fafafa;
+            color: #424245;
+            resize: none;
+            line-height: 1.55;
+            tab-size: 4;
+        }
+
+        /* --- 预览区 Markdown 样式 --- */
+        #preview {
+            background: #fff;
+            word-wrap: break-word;
+            overflow-wrap: anywhere;
+        }
+        #preview h1, #preview h2, #preview h3, #preview h4, #preview h5, #preview h6 {
+            margin: 1.4em 0 0.65em;
+            line-height: 1.25;
+            color: #000;
+            font-weight: 600;
+        }
+        #preview h1:first-child, #preview h2:first-child, #preview h3:first-child { margin-top: 0; }
+        #preview h1 { font-size: 1.75em; border-bottom: 1px solid var(--border); padding-bottom: 0.35em; }
+        #preview h2 { font-size: 1.45em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+        #preview h3 { font-size: 1.25em; padding-left: 10px; border-left: 4px solid var(--apple-blue); }
+        #preview h4 { font-size: 1.1em; }
+        #preview h5, #preview h6 { font-size: 1em; color: var(--text-secondary); }
+
+        #preview p { margin: 0 0 1em; }
+        #preview p:last-child { margin-bottom: 0; }
+        #preview strong { color: var(--apple-red); font-weight: 600; }
+        #preview em { font-style: italic; }
+        #preview del { color: var(--text-secondary); text-decoration: line-through; }
+
+        #preview a {
+            color: var(--apple-blue);
+            text-decoration: none;
+            border-bottom: 1px solid rgba(0, 102, 204, 0.35);
+        }
+        #preview a:hover { border-bottom-color: var(--apple-blue); }
+
+        #preview blockquote {
+            margin: 1em 0;
+            padding: 0.6em 1em 0.6em 1.2em;
+            color: #4f4f4f;
+            border-left: 4px solid var(--apple-blue);
+            background: #f9f9fb;
+            border-radius: 0 6px 6px 0;
+        }
+        #preview blockquote p { margin-bottom: 0.5em; }
+        #preview blockquote p:last-child { margin-bottom: 0; }
+
+        #preview code {
+            font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+            background: var(--code-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 4px;
+            font-size: 0.88em;
+            color: #24292f;
+        }
+        #preview pre {
+            margin: 1em 0;
+            padding: 0;
+            overflow: auto;
+            background: var(--code-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        #preview pre code {
+            display: block;
+            padding: 14px 16px;
+            background: none;
+            font-size: 13px;
+            line-height: 1.45;
+            color: inherit;
+            overflow-x: auto;
+        }
+        #preview pre.hljs { background: var(--code-bg); }
+
+        #preview ul, #preview ol { margin: 0.75em 0 1em; padding-left: 1.6em; }
+        #preview li { margin-bottom: 0.35em; }
+        #preview li > p { margin-bottom: 0.35em; }
+        #preview ul ul, #preview ul ol, #preview ol ul, #preview ol ol { margin-top: 0.25em; margin-bottom: 0.25em; }
+
+        #preview .task-list-item, #preview li:has(> input[type="checkbox"]) {
+            list-style: none;
+            margin-left: -1.4em;
+        }
+        #preview .task-list-item input, #preview li > input[type="checkbox"] {
+            margin-right: 8px;
+            vertical-align: middle;
+            cursor: default;
+        }
+
+        #preview hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 1.75em 0;
+        }
+        #preview img { max-width: 100%; height: auto; border-radius: 8px; margin: 0.5em 0; }
+
+        #preview .table-wrapper {
+            margin: 1em 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        #preview table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 200px; }
+        #preview th {
+            background: var(--accent-bg);
+            font-weight: 600;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+        #preview td { padding: 10px 12px; border: 1px solid var(--border); }
+        #preview tr:nth-child(even) td { background: #fafafa; }
+
+        #preview mark { background-color: var(--highlight); color: inherit; padding: 0 2px; border-radius: 2px; }
+        #preview mark.current { background-color: var(--highlight-current); }
+
+        #preview .render-error {
+            margin-top: 1em;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #856404;
+            background: #fff8e6;
+            border: 1px solid #ffe69c;
+            border-radius: 6px;
+        }
+
+        #preview .md-embed {
+            margin: 1em 0;
+            padding: 16px 20px;
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            background: #fafbfc;
+        }
+        #preview .md-embed > :first-child { margin-top: 0; }
+        #preview .md-embed > :last-child { margin-bottom: 0; }
+        #preview .md-embed .table-wrapper { margin: 0.75em 0; }
+
+        #preview.preview-empty::before {
+            content: "预览区：输入左侧 Markdown 后在此显示";
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .pane-editor { position: relative; }
+        .drop-overlay {
+            display: none;
+            position: absolute;
+            inset: 0;
+            z-index: 10;
+            background: rgba(0, 102, 204, 0.08);
+            border: 2px dashed var(--apple-blue);
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            color: var(--apple-blue);
+            font-weight: 500;
+            pointer-events: none;
+        }
+        .pane-editor.drag-over .drop-overlay { display: flex; }
+
+        .pane-resizer {
+            width: 5px;
+            cursor: col-resize;
+            background: var(--border);
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .pane-resizer:hover, .pane-resizer.active { background: var(--apple-blue); }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: #1d1d1f;
+            color: #fff;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            opacity: 0;
+            transition: transform 0.25s, opacity 0.25s;
+            z-index: 1000;
+            pointer-events: none;
+            max-width: 90vw;
+            text-align: center;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .status-bar .stats { margin-left: 8px; opacity: 0.85; }
+
+        kbd {
+            font-family: ui-monospace, monospace;
+            font-size: 10px;
+            padding: 1px 5px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--accent-bg);
+        }
+
+        @media (max-width: 768px) {
+            .pane-resizer { display: none; }
+            .editor-area { flex-direction: column; }
+            .pane:first-child { border-right: none; border-bottom: 1px solid var(--border); max-height: 45vh; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <div>
+            <div class="header-title">Markdown 渲染工具</div>
+            <div class="header-sub">宽容解析 · 自动修复 · 清晰排版</div>
+        </div>
+        <div class="toolbar">
+            <label class="toggle-label" title="自动修复残缺语法后再渲染">
+                <input type="checkbox" id="tolerantMode" checked>
+                宽容模式
+            </label>
+            <label class="toggle-label" title="结构拆行（##、###、列表、---）+ 段内单换行保留为换行">
+                <input type="checkbox" id="reflowStructure" checked>
+                智能换行
+            </label>
+            <button type="button" class="btn btn-primary" id="btnFormat">格式化</button>
+            <button type="button" class="btn" id="btnOpen" title="Ctrl+O">打开</button>
+            <button type="button" class="btn" id="btnExport" title="Ctrl+E">导出 HTML</button>
+            <input type="file" id="fileInput" accept=".md,.markdown,.txt,.text" hidden>
+            <button type="button" class="btn" id="btnPaste">粘贴</button>
+            <button type="button" class="btn" id="btnCopyMd">复制 MD</button>
+            <button type="button" class="btn" id="btnCopyHtml">复制 HTML</button>
+            <button type="button" class="btn" id="btnClear">清空</button>
+        </div>
+    </div>
+    <div class="status-bar" id="statusBar">就绪<span class="stats" id="statusStats"></span></div>
+    <div class="editor-area" id="editorArea">
+        <div class="pane pane-editor">
+            <div class="drop-overlay" id="dropOverlay">松开以导入 Markdown 文件</div>
+            <div class="search-box">
+                <input type="text" class="search-input" placeholder="搜索源码 (Enter 跳转)..." id="editorSearchInput" autocomplete="off">
+                <span class="search-info" id="editorSearchCount">0/0</span>
+                <button type="button" class="search-btn" id="editorSearchPrev" title="上一个 (Shift+Enter)">↑</button>
+                <button type="button" class="search-btn" id="editorSearchBtn" title="下一个 (Enter)">↓</button>
+            </div>
+            <textarea id="editor" spellcheck="false" placeholder="在此输入 Markdown，支持残缺语法自动修复；可拖放 .md 文件…"></textarea>
+        </div>
+        <div class="pane-resizer" id="paneResizer" title="拖动调整宽度"></div>
+        <div class="pane">
+            <div class="search-box">
+                <input type="text" class="search-input" placeholder="搜索预览 (Enter 跳转)..." id="previewSearchInput" autocomplete="off">
+                <span class="search-info" id="previewSearchCount">0/0</span>
+                <button type="button" class="search-btn" id="previewSearchPrev" title="上一个 (Shift+Enter)">↑</button>
+                <button type="button" class="search-btn" id="previewSearchBtn" title="下一个 (Enter)">↓</button>
+            </div>
+            <div id="preview" class="preview-empty"></div>
+        </div>
+    </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    const editor = document.getElementById('editor');
+    const preview = document.getElementById('preview');
+    const statusBar = document.getElementById('statusBar');
+    const statusStats = document.getElementById('statusStats');
+    const tolerantMode = document.getElementById('tolerantMode');
+    const reflowStructure = document.getElementById('reflowStructure');
+    const toastEl = document.getElementById('toast');
+    const fileInput = document.getElementById('fileInput');
+    const paneEditor = document.querySelector('.pane-editor');
+    const dropOverlay = document.getElementById('dropOverlay');
+    const paneResizer = document.getElementById('paneResizer');
+    const editorArea = document.getElementById('editorArea');
+
+    const STORAGE = {
+        content: 'md-tool-content',
+        tolerant: 'md-tool-tolerant',
+        reflow: 'md-tool-reflow',
+        split: 'md-tool-split'
+    };
+    const MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+    let lastFixNotes = [];
+    let renderDebounce = null;
+    let saveDebounce = null;
+    let toastTimer = null;
+
+    function showToast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+    }
+
+    function saveState() {
+        try {
+            localStorage.setItem(STORAGE.content, editor.value);
+            localStorage.setItem(STORAGE.tolerant, tolerantMode.checked ? '1' : '0');
+            localStorage.setItem(STORAGE.reflow, reflowStructure.checked ? '1' : '0');
+            const leftPane = editorArea.querySelector('.pane-editor');
+            if (leftPane) localStorage.setItem(STORAGE.split, String(leftPane.offsetWidth));
+        } catch (_) { /* quota */ }
+    }
+
+    function scheduleSave() {
+        clearTimeout(saveDebounce);
+        saveDebounce = setTimeout(saveState, 400);
+    }
+
+    function loadState() {
+        try {
+            const t = localStorage.getItem(STORAGE.tolerant);
+            const r = localStorage.getItem(STORAGE.reflow);
+            const legacyBreaks = localStorage.getItem('md-tool-breaks');
+            if (t !== null) tolerantMode.checked = t === '1';
+            if (r !== null) reflowStructure.checked = r === '1';
+            else if (legacyBreaks !== null) reflowStructure.checked = legacyBreaks === '1';
+            const split = parseInt(localStorage.getItem(STORAGE.split), 10);
+            const leftPane = editorArea.querySelector('.pane-editor');
+            if (leftPane && split > 120 && split < window.innerWidth - 200) {
+                leftPane.style.flex = 'none';
+                leftPane.style.width = split + 'px';
+            }
+            return localStorage.getItem(STORAGE.content);
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function loadFile(file) {
+        if (!file) return;
+        if (file.size > MAX_FILE_BYTES) {
+            showToast('文件过大（>2MB），请拆分后导入');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            editor.value = String(reader.result || '');
+            scheduleRender();
+            scheduleSave();
+            showToast('已导入：' + file.name);
+        };
+        reader.onerror = () => showToast('读取文件失败');
+        reader.readAsText(file, 'UTF-8');
+    }
+
+    // ========== Markdown 预处理 / 自动修复 ==========
+    const FixNotes = {
+        push(arr, msg) { arr.push(msg); }
+    };
+
+    function normalizeLineEndings(text) {
+        return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    }
+
+    function stripBom(text, notes) {
+        if (text.charCodeAt(0) === 0xfeff) {
+            FixNotes.push(notes, '已移除 UTF-8 BOM');
+            return text.slice(1);
+        }
+        return text;
+    }
+
+    function normalizeTaskCheckboxes(text, notes) {
+        const next = text.replace(/^(\s*[-*+]\s+)\[([ xX])\]/gm, (m, pre, c) => pre + '[' + (c === ' ' ? ' ' : 'x') + ']');
+        if (next !== text) FixNotes.push(notes, '已规范化任务列表勾选');
+        return next;
+    }
+
+    function normalizeFullWidthSpacesInMarkers(text, notes) {
+        const next = text.replace(/\u3000/g, ' ');
+        if (next !== text) FixNotes.push(notes, '已将全角空格转为半角');
+        return next;
+    }
+
+    /** 检测「一行流」式 Markdown：标题/列表/分隔符挤在同一行 */
+    function needsStructureReflow(text) {
+        if (!text || text.length < 80) return false;
+        const lines = text.split('\n');
+        const nonEmpty = lines.filter(l => l.trim());
+        const maxLen = Math.max(...nonEmpty.map(l => l.length), 0);
+        const inlineHeading = /[^\n#](#{1,6}\s+\S)/.test(text);
+        const inlineList = /[^\n*]\s+\*\s+[^\s*]/.test(text) || /[^\n\d]\s+\d+\.\s+/.test(text);
+        const inlineHr = /\S\s+---\s+\S/.test(text);
+        return (
+            (nonEmpty.length <= 3 && text.length > 200 && (inlineHeading || inlineList)) ||
+            maxLen > 280 ||
+            (inlineHeading && (inlineList || inlineHr))
+        );
+    }
+
+    function reflowPlain(s) {
+        s = s.replace(/\s+---\s+/g, '\n\n---\n\n');
+        s = s.replace(/\s+(#{1,6}\s+)/g, '\n\n$1');
+        s = s.replace(/\s+(\d+\.\s+)/g, '\n$1');
+        s = s.replace(/\s+\*\s+(?=[^\s*])/g, '\n* ');
+        s = s.replace(/([：:])\s+(\*\s+)/g, '$1\n$2');
+        return s;
+    }
+
+    function reflowSegment(seg) {
+        const boldRe = /\*\*[\s\S]*?\*\*/g;
+        let out = '';
+        let last = 0;
+        let m;
+        while ((m = boldRe.exec(seg)) !== null) {
+            out += reflowPlain(seg.slice(last, m.index));
+            out += m[0];
+            last = m.index + m[0].length;
+        }
+        out += reflowPlain(seg.slice(last));
+        return out;
+    }
+
+    function reflowInlineMarkdownStructure(text, notes) {
+        if (!needsStructureReflow(text)) return text;
+        const parts = text.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g);
+        const out = parts.map(part => {
+            if (/^```|^~~~/.test(part)) return part;
+            return reflowSegment(part);
+        }).join('');
+        const normalized = out.replace(/\n{3,}/g, '\n\n').trim();
+        if (normalized !== text.trim()) {
+            FixNotes.push(notes, '已按标题、列表与分隔线自动换行');
+        }
+        return normalized;
+    }
+
+    function postProcessHtml(html) {
+        html = html.replace(/<table\b/gi, '<div class="table-wrapper"><table');
+        html = html.replace(/<\/table>/gi, '</table></div>');
+        html = html.replace(/<a\s+(?![^>]*\btarget=)([^>]*\bhref=)/gi, '<a target="_blank" rel="noopener noreferrer" $1');
+        return html;
+    }
+
+    function decodeLiteralEscapes(text, notes) {
+        if (/\\n|\\t|\\r/.test(text)) {
+            FixNotes.push(notes, '已解码字面量 \\n / \\t');
+            return text
+                .replace(/\\r\\n/g, '\n')
+                .replace(/\\n/g, '\n')
+                .replace(/\\t/g, '\t')
+                .replace(/\\r/g, '\n');
+        }
+        return text;
+    }
+
+    function collapseExcessiveBlankLines(text, notes) {
+        const next = text.replace(/\n{4,}/g, '\n\n\n');
+        if (next !== text) FixNotes.push(notes, '已压缩过多空行');
+        return next;
+    }
+
+    function trimTrailingSpaces(text) {
+        return text.split('\n').map(line => line.replace(/[ \t]+$/g, '')).join('\n');
+    }
+
+    function fixHeadings(line) {
+        return line.replace(/^(#{1,6})([^\s#\n])/g, '$1 $2');
+    }
+
+    function fixListMarkers(line) {
+        let s = line.replace(/^(\s*)([\*\-\+])([^\s\*\-\+\n])/g, '$1$2 $3');
+        s = s.replace(/^(\s*)(\d+)\.([^\s\n])/g, '$1$2. $3');
+        return s;
+    }
+
+    function fixBlockquote(line) {
+        return line.replace(/^(>+)([^\s>])/g, '$1 $2');
+    }
+
+    function fixSetextHeadings(lines, notes) {
+        const out = [];
+        let changed = false;
+        for (let i = 0; i < lines.length; i++) {
+            out.push(lines[i]);
+            if (i + 1 < lines.length) {
+                const cur = lines[i].trim();
+                const next = lines[i + 1].trim();
+                if (cur && /^=+$/.test(next) && next.length >= 3) {
+                    out[out.length - 1] = '# ' + cur;
+                    out.push('');
+                    i++;
+                    changed = true;
+                    continue;
+                }
+                if (cur && /^-+$/.test(next) && next.length >= 3 && !/^---$/.test(next)) {
+                    out[out.length - 1] = '## ' + cur;
+                    out.push('');
+                    i++;
+                    changed = true;
+                }
+            }
+        }
+        if (changed) FixNotes.push(notes, '已转换 Setext 标题');
+        return out;
+    }
+
+    function closeCodeFences(lines, notes) {
+        let fenceCount = 0;
+        for (const line of lines) {
+            const t = line.trim();
+            if (/^```/.test(t) || /^~~~/.test(t)) fenceCount++;
+        }
+        if (fenceCount % 2 === 1) {
+            FixNotes.push(notes, '已补全未闭合的代码块');
+            return lines.concat(['```']);
+        }
+        return lines;
+    }
+
+    function balanceInlineInSegment(seg, pairs) {
+        let s = seg;
+        for (const [open, close] of pairs) {
+            const esc = open.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const re = new RegExp(esc, 'g');
+            const count = (s.match(re) || []).length;
+            if (count % 2 === 1) s += close;
+        }
+        return s;
+    }
+
+    function balanceInlineMarkers(line) {
+        if (!line.trim()) return line;
+        const parts = line.split(/(`+[^`]*`+)/g);
+        const pairs = [
+            ['***', '***'],
+            ['**', '**'],
+            ['__', '__'],
+            ['~~', '~~'],
+            ['*', '*'],
+            ['_', '_']
+        ];
+        return parts.map((part, i) => {
+            if (i % 2 === 1 && /^`/.test(part)) return part;
+            return balanceInlineInSegment(part, pairs);
+        }).join('');
+    }
+
+    function fixUnclosedLinks(line) {
+        let s = line;
+        const linkRe = /\[([^\]]*)\]\(([^)]*)$/g;
+        if (linkRe.test(s)) {
+            s = s.replace(/\[([^\]]*)\]\(([^)]*)$/g, '[$1]($2)');
+        }
+        const imgRe = /!\[([^\]]*)\]\(([^)]*)$/g;
+        if (imgRe.test(s)) {
+            s = s.replace(/!\[([^\]]*)\]\(([^)]*)$/g, '![$1]($2)');
+        }
+        return s;
+    }
+
+    function splitTableCells(line) {
+        const t = line.trim();
+        return t.split('|').map(c => c.trim()).filter((c, i, arr) => {
+            return !((i === 0 || i === arr.length - 1) && c === '');
+        });
+    }
+
+    function isTableSeparator(line) {
+        const t = line.trim();
+        if (!/^\|?[\s|:-]+\|?$/.test(t) || !/-/.test(t)) return false;
+        return splitTableCells(line).every(c => /^:?-{3,}:?$/.test(c));
+    }
+
+    function looksLikeTableRow(line) {
+        const t = line.trim();
+        if (!t.includes('|')) return false;
+        if (isTableSeparator(line)) return true;
+        const cells = splitTableCells(line);
+        if (cells.length < 2) return false;
+        const pipes = (t.match(/\|/g) || []).length;
+        if (t.startsWith('|') && t.endsWith('|')) return cells.length >= 2;
+        if (cells.length >= 3 && pipes >= 2) {
+            if (!t.startsWith('|') && cells.some(c => c.length > 120)) return false;
+            return true;
+        }
+        return false;
+    }
+
+    function inferTableSeparator(headerLine) {
+        const cells = headerLine.split('|').filter((c, i, arr) => {
+            const t = c.trim();
+            return !((i === 0 || i === arr.length - 1) && t === '');
+        });
+        const cols = Math.max(cells.length, 1);
+        return '| ' + Array(cols).fill('---').join(' | ') + ' |';
+    }
+
+    function fixTables(lines, notes) {
+        const out = [];
+        let inserted = false;
+        let inFence = false;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const t = line.trim();
+            if (/^```/.test(t) || /^~~~/.test(t)) {
+                inFence = !inFence;
+                out.push(line);
+                continue;
+            }
+            if (inFence) {
+                out.push(line);
+                continue;
+            }
+            out.push(line);
+            if (!looksLikeTableRow(line) || isTableSeparator(line)) continue;
+            const prev = lines[i - 1];
+            const isBlockStart = i === 0 || !looksLikeTableRow(prev) || isTableSeparator(prev);
+            if (!isBlockStart) continue;
+            const next = lines[i + 1];
+            if (next !== undefined && looksLikeTableRow(next) && !isTableSeparator(next)) {
+                out.push(inferTableSeparator(line));
+                inserted = true;
+            }
+        }
+        if (inserted) FixNotes.push(notes, '已为表格补全分隔行');
+        return out;
+    }
+
+    function normalizeTablePipes(line) {
+        if (!looksLikeTableRow(line)) return line;
+        let t = line.trim();
+        if (!t.startsWith('|')) t = '| ' + t;
+        if (!t.endsWith('|')) t = t + ' |';
+        return t;
+    }
+
+    function mergeSingleLineBreaks(text, notes) {
+        const lines = text.split('\n');
+        const out = [];
+        let merged = false;
+        for (let i = 0; i < lines.length; i++) {
+            const cur = lines[i];
+            const trimmed = cur.trim();
+            if (
+                trimmed &&
+                i + 1 < lines.length &&
+                lines[i + 1].trim() &&
+                !/^(#{1,6}\s|[-*+]\s|\d+\.\s|>|```|~~~|\|)/.test(trimmed) &&
+                !/^(#{1,6}\s|[-*+]\s|\d+\.\s|>|```|~~~|\|)/.test(lines[i + 1].trim()) &&
+                !trimmed.endsWith('  ') &&
+                !/[.!?:;，。！？：；]$/.test(trimmed) &&
+                trimmed.length < 120
+            ) {
+                const next = lines[i + 1].trim();
+                if (next.length < 120 && !/^[-*_]{3,}$/.test(next)) {
+                    out.push(cur.trimEnd() + ' ' + next);
+                    i++;
+                    merged = true;
+                    continue;
+                }
+            }
+            out.push(cur);
+        }
+        if (merged) FixNotes.push(notes, '已合并意外断行的句子');
+        return out.join('\n');
+    }
+
+    function preprocessMarkdown(raw, options) {
+        const notes = [];
+        if (!raw || !raw.trim()) return { text: '', notes };
+
+        let text = normalizeLineEndings(raw);
+        text = stripBom(text, notes);
+        text = decodeLiteralEscapes(text, notes);
+        text = normalizeTaskCheckboxes(text, notes);
+        text = normalizeFullWidthSpacesInMarkers(text, notes);
+        if (options.reflowStructure !== false) {
+            text = reflowInlineMarkdownStructure(text, notes);
+        }
+        text = trimTrailingSpaces(text);
+        text = collapseExcessiveBlankLines(text, notes);
+
+        if (options.mergeBrokenLines) {
+            text = mergeSingleLineBreaks(text, notes);
+        }
+
+        let lines = text.split('\n');
+        lines = fixSetextHeadings(lines, notes);
+        lines = closeCodeFences(lines, notes);
+        lines = fixTables(lines, notes);
+
+        let inFence = false;
+        lines = lines.map(line => {
+            const t = line.trim();
+            if (/^```/.test(t) || /^~~~/.test(t)) {
+                inFence = !inFence;
+                return line;
+            }
+            if (inFence) return line;
+            let s = line;
+            s = fixHeadings(s);
+            s = fixListMarkers(s);
+            s = fixBlockquote(s);
+            if (looksLikeTableRow(s)) s = normalizeTablePipes(s);
+            if (options.balanceInline) {
+                s = balanceInlineMarkers(s);
+                s = fixUnclosedLinks(s);
+            }
+            return s;
+        });
+
+        return { text: lines.join('\n'), notes };
+    }
+
+    // ========== 渲染 ==========
+    const renderer = new marked.Renderer();
+    let markdownParseDepth = 0;
+
+    function sanitizeRenderedHtml(html) {
+        if (typeof DOMPurify === 'undefined') return html;
+        return DOMPurify.sanitize(html, {
+            ADD_ATTR: ['target', 'rel'],
+            ADD_TAGS: ['input'],
+            ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'type', 'checked', 'disabled', 'align', 'target', 'rel']
+        });
+    }
+
+    function parseMarkdownFragment(md, depth) {
+        const prev = markdownParseDepth;
+        markdownParseDepth = depth;
+        configureMarked();
+        try {
+            let html = marked.parse(md);
+            html = sanitizeRenderedHtml(html);
+            return postProcessHtml(html);
+        } finally {
+            markdownParseDepth = prev;
+        }
+    }
+
+    renderer.code = function (code, infostring) {
+        const lang = (infostring || '').trim().split(/\s+/)[0].toLowerCase();
+        if (/^(markdown|md|gfm)$/.test(lang) && markdownParseDepth === 0) {
+            try {
+                return '<div class="md-embed">' + parseMarkdownFragment(code, 1) + '</div>';
+            } catch (_) {
+                /* 回退为源码展示 */
+            }
+        }
+        let highlighted = code;
+        if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+            try {
+                highlighted = hljs.highlight(code, { language: lang }).value;
+            } catch (_) {
+                highlighted = hljs.highlightAuto(code).value;
+            }
+        } else if (typeof hljs !== 'undefined') {
+            highlighted = hljs.highlightAuto(code).value;
+        } else {
+            highlighted = escapeHtml(code);
+        }
+        const langClass = lang ? ' language-' + lang : '';
+        return '<pre class="hljs"><code class="hljs' + langClass + '">' + highlighted + '</code></pre>';
+    };
+
+    function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, m =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])
+        );
+    }
+
+    function configureMarked() {
+        marked.setOptions({
+            renderer,
+            gfm: true,
+            breaks: reflowStructure.checked,
+            pedantic: false,
+            smartLists: true,
+            mangle: false,
+            headerIds: false
+        });
+    }
+
+    function renderMarkdown(md) {
+        configureMarked();
+        const tolerant = tolerantMode.checked;
+        const { text, notes } = tolerant
+            ? preprocessMarkdown(md, {
+                balanceInline: true,
+                mergeBrokenLines: false,
+                reflowStructure: reflowStructure.checked
+            })
+            : { text: normalizeLineEndings(md), notes: [] };
+
+        lastFixNotes = notes;
+
+        let html = '';
+        try {
+            html = marked.parse(text);
+        } catch (err) {
+            html = '<p>' + escapeHtml(text).replace(/\n/g, '<br>') + '</p>';
+            html += '<div class="render-error">解析异常，已以纯文本回退显示：' + escapeHtml(err.message) + '</div>';
+        }
+
+        html = sanitizeRenderedHtml(html);
+        html = postProcessHtml(html);
+
+        return { html, notes, normalized: text };
+    }
+
+    function updateStats() {
+        const v = editor.value;
+        const el = document.getElementById('statusStats');
+        if (!el) return;
+        if (!v) { el.textContent = ''; return; }
+        el.textContent = ' · ' + v.split('\n').length + ' 行 · ' + v.length + ' 字';
+    }
+
+    function updateStatus(notes) {
+        updateStats();
+        const msg = notes.length
+            ? '<span class="fixed">已自动修复：</span> ' + notes.join('；')
+            : '就绪 · 输入即时预览';
+        const statsEl = document.getElementById('statusStats');
+        const statsHtml = statsEl ? statsEl.outerHTML : '<span class="stats" id="statusStats"></span>';
+        statusBar.innerHTML = msg + statsHtml;
+        updateStats();
+    }
+
+    function doRender() {
+        const empty = !editor.value.trim();
+        preview.classList.toggle('preview-empty', empty);
+        if (empty) {
+            preview.innerHTML = '';
+            updateStatus([]);
+            return;
+        }
+        const { html, notes } = renderMarkdown(editor.value);
+        preview.innerHTML = html;
+        updateStatus(notes);
+    }
+
+    function scheduleRender() {
+        clearTimeout(renderDebounce);
+        renderDebounce = setTimeout(doRender, 80);
+    }
+
+    // ========== 搜索 ==========
+    let editorMatches = [], editorIdx = -1;
+
+    function searchEditor() {
+        const term = document.getElementById('editorSearchInput').value;
+        const text = editor.value;
+        editorMatches = [];
+        editorIdx = -1;
+        if (!term) {
+            document.getElementById('editorSearchCount').textContent = '0/0';
+            return;
+        }
+        let i = text.indexOf(term);
+        while (i !== -1) {
+            editorMatches.push(i);
+            i = text.indexOf(term, i + term.length);
+        }
+        document.getElementById('editorSearchCount').textContent =
+            editorMatches.length ? '0/' + editorMatches.length : '0/0';
+    }
+
+    function jumpEditor(backward) {
+        if (!editorMatches.length) return;
+        editorIdx = backward
+            ? (editorIdx - 1 + editorMatches.length) % editorMatches.length
+            : (editorIdx + 1) % editorMatches.length;
+        const term = document.getElementById('editorSearchInput').value;
+        editor.focus();
+        editor.setSelectionRange(editorMatches[editorIdx], editorMatches[editorIdx] + term.length);
+        document.getElementById('editorSearchCount').textContent =
+            (editorIdx + 1) + '/' + editorMatches.length;
+    }
+
+    let previewMatches = [], previewIdx = -1;
+    let basePreviewHtml = '';
+
+    function searchPreview() {
+        const term = document.getElementById('previewSearchInput').value;
+        doRender();
+        basePreviewHtml = preview.innerHTML;
+        previewMatches = [];
+        previewIdx = -1;
+
+        if (!term) {
+            document.getElementById('previewSearchCount').textContent = '0/0';
+            return;
+        }
+
+        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const reg = new RegExp('(' + escaped + ')', 'gi');
+        const walker = document.createTreeWalker(preview, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        let n;
+        while ((n = walker.nextNode())) nodes.push(n);
+
+        nodes.forEach(node => {
+            if (!node.nodeValue || !reg.test(node.nodeValue)) return;
+            reg.lastIndex = 0;
+            const val = node.nodeValue;
+            const frag = document.createDocumentFragment();
+            val.split(reg).forEach(part => {
+                if (part.toLowerCase() === term.toLowerCase()) {
+                    const m = document.createElement('mark');
+                    m.textContent = part;
+                    frag.appendChild(m);
+                    previewMatches.push(m);
+                } else if (part) {
+                    frag.appendChild(document.createTextNode(part));
+                }
+            });
+            node.parentNode.replaceChild(frag, node);
+        });
+
+        document.getElementById('previewSearchCount').textContent =
+            previewMatches.length ? '0/' + previewMatches.length : '0/0';
+    }
+
+    function jumpPreview(backward) {
+        if (!previewMatches.length) return;
+        previewIdx = backward
+            ? (previewIdx - 1 + previewMatches.length) % previewMatches.length
+            : (previewIdx + 1) % previewMatches.length;
+        previewMatches.forEach((m, i) => m.classList.toggle('current', i === previewIdx));
+        previewMatches[previewIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('previewSearchCount').textContent =
+            (previewIdx + 1) + '/' + previewMatches.length;
+    }
+
+    function exportHtml() {
+        if (!editor.value.trim()) {
+            showToast('无内容可导出');
+            return;
+        }
+        const body = preview.classList.contains('preview-empty') ? renderMarkdown(editor.value).html : preview.innerHTML;
+        const doc = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Markdown 导出</title><style>body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;line-height:1.6}pre{overflow:auto;background:#f6f8fa;padding:1rem;border-radius:8px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px}</style></head><body>' + body + '</body></html>';
+        const blob = new Blob([doc], { type: 'text/html;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'markdown-export-' + new Date().toISOString().slice(0, 10) + '.html';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('已导出 HTML');
+    }
+
+    function initPaneResizer() {
+        if (!paneResizer) return;
+        let dragging = false;
+        paneResizer.addEventListener('mousedown', e => {
+            dragging = true;
+            paneResizer.classList.add('active');
+            document.body.style.cursor = 'col-resize';
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', e => {
+            if (!dragging) return;
+            const area = editorArea.getBoundingClientRect();
+            const w = Math.min(Math.max(e.clientX - area.left, 180), area.width - 180);
+            const left = editorArea.querySelector('.pane-editor');
+            left.style.flex = 'none';
+            left.style.width = w + 'px';
+        });
+        document.addEventListener('mouseup', () => {
+            if (!dragging) return;
+            dragging = false;
+            paneResizer.classList.remove('active');
+            document.body.style.cursor = '';
+            scheduleSave();
+        });
+    }
+
+    function initDragDrop() {
+        if (!paneEditor) return;
+        ['dragenter', 'dragover'].forEach(ev => {
+            paneEditor.addEventListener(ev, e => {
+                e.preventDefault();
+                paneEditor.classList.add('drag-over');
+            });
+        });
+        ['dragleave', 'drop'].forEach(ev => {
+            paneEditor.addEventListener(ev, e => {
+                e.preventDefault();
+                if (ev === 'drop' && e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+                paneEditor.classList.remove('drag-over');
+            });
+        });
+    }
+
+    // ========== 工具栏 ==========
+    document.getElementById('btnFormat').addEventListener('click', () => {
+        const { text, notes } = preprocessMarkdown(editor.value, {
+            balanceInline: true,
+            mergeBrokenLines: true,
+            reflowStructure: reflowStructure.checked
+        });
+        editor.value = text;
+        doRender();
+        scheduleSave();
+        updateStatus(notes.length ? notes : ['已格式化源码']);
+        showToast('已格式化');
+    });
+
+    document.getElementById('btnOpen').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files[0]) loadFile(fileInput.files[0]);
+        fileInput.value = '';
+    });
+    document.getElementById('btnExport').addEventListener('click', exportHtml);
+
+    document.getElementById('btnPaste').addEventListener('click', async () => {
+        try {
+            editor.value = await navigator.clipboard.readText();
+            scheduleRender();
+            scheduleSave();
+            showToast('已粘贴');
+        } catch {
+            showToast('无法读取剪贴板，请手动粘贴');
+        }
+    });
+
+    document.getElementById('btnCopyMd').addEventListener('click', async () => {
+        const { text } = preprocessMarkdown(editor.value, { balanceInline: true, mergeBrokenLines: false });
+        try {
+            await navigator.clipboard.writeText(tolerantMode.checked ? text : editor.value);
+            showToast('已复制 Markdown');
+        } catch {
+            showToast('复制失败');
+        }
+    });
+
+    document.getElementById('btnCopyHtml').addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(preview.innerHTML);
+            showToast('已复制 HTML');
+        } catch {
+            showToast('复制失败');
+        }
+    });
+
+    document.getElementById('btnClear').addEventListener('click', () => {
+        if (editor.value && !confirm('确定清空内容？')) return;
+        editor.value = '';
+        doRender();
+        scheduleSave();
+    });
+
+    tolerantMode.addEventListener('change', () => { doRender(); scheduleSave(); });
+    reflowStructure.addEventListener('change', () => { doRender(); scheduleSave(); });
+
+    editor.addEventListener('input', () => {
+        scheduleRender();
+        scheduleSave();
+        if (document.getElementById('editorSearchInput').value) searchEditor();
+        if (document.getElementById('previewSearchInput').value) {
+            clearTimeout(renderDebounce);
+            renderDebounce = setTimeout(searchPreview, 120);
+        }
+    });
+
+    document.getElementById('editorSearchInput').addEventListener('input', searchEditor);
+    document.getElementById('editorSearchInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); jumpEditor(e.shiftKey); }
+    });
+    document.getElementById('editorSearchBtn').addEventListener('click', () => jumpEditor(false));
+    document.getElementById('editorSearchPrev').addEventListener('click', () => jumpEditor(true));
+
+    document.getElementById('previewSearchInput').addEventListener('input', () => {
+        clearTimeout(renderDebounce);
+        renderDebounce = setTimeout(searchPreview, 150);
+    });
+    document.getElementById('previewSearchInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); jumpPreview(e.shiftKey); }
+    });
+    document.getElementById('previewSearchBtn').addEventListener('click', () => jumpPreview(false));
+    document.getElementById('previewSearchPrev').addEventListener('click', () => jumpPreview(true));
+
+    document.addEventListener('keydown', e => {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        const k = e.key.toLowerCase();
+        if (k === 's') { e.preventDefault(); saveState(); showToast('已保存到本地'); }
+        else if (k === 'o') { e.preventDefault(); fileInput.click(); }
+        else if (k === 'e') { e.preventDefault(); exportHtml(); }
+        else if (k === 'f' && !e.shiftKey) { e.preventDefault(); document.getElementById('editorSearchInput').focus(); }
+        else if (k === 'f' && e.shiftKey) {
+            e.preventDefault();
+            document.getElementById('btnFormat').click();
+        }
+    });
+
+    initPaneResizer();
+    initDragDrop();
+
+    // ========== 示例内容 ==========
+    const sample = `# Markdown 宽容渲染
+
+支持 **残缺语法** 自动修复，例如未闭合的加粗、代码块、表格等。
+
+## 任务列表
+- [x] 已完成项
+- [ ] 待办，含 **加粗** 与 \`行内代码\`
+- [X] 大写 X 也识别为已完成
+
+## 引用与代码
+> 引用块
+> 多行引用
+
+\`\`\`javascript
+function greet(name) {
+  console.log("Hello, " + name);
+}
+greet("World");
+\`\`\`
+
+## 表格（可缺分隔行）
+| 功能 | 状态 | 说明 |
+| 搜索 | 可用 | Enter 跳转 |
+| 渲染 | 稳定 | GFM + 预处理 |
+
+---
+
+### 容错示例（故意残缺）
+这是未闭合的加粗文字**
+\`未闭合行内代码
+标题无空格#也能识别
+-列表无空格也能渲染
+
+单换行在「智能换行」开启时
+会显示为换行
+
+[未闭合链接](https://example.com
+`;
+
+    if (typeof marked === 'undefined') {
+        statusBar.textContent = '加载失败：无法获取 marked.js，请检查网络后刷新';
+        showToast('CDN 加载失败，请联网刷新');
+    } else {
+        const saved = loadState();
+        editor.value = saved !== null && saved !== '' ? saved : sample;
+        doRender();
+        if (saved) showToast('已恢复上次内容');
+    }
+})();
+</script>
+</body>
+</html>
