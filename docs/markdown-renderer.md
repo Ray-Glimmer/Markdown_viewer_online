@@ -27,6 +27,8 @@
 
 粘贴内容中如果出现未加代码围栏的 Mermaid 图表，例如以 `flowchart LR`、`graph TD`、`sequenceDiagram`、`classDiagram`、`stateDiagram-v2`、`erDiagram` 等开头的连续图表语句，宽容模式和格式化会自动补成 `mermaid` 代码块。
 
+渲染时会参考 office-agent-kit 的图表路线做自动样式选择：系统架构图使用更接近 Figma 画布的浅底、分组和多色节点；流程图强调步骤流向；时序图强调参与者和消息层级；ER/class 图强调数据结构可读性。源码仍保持 Mermaid，可继续通过修改源码同步调整图表。
+
 ````markdown
 ```mermaid
 flowchart LR
@@ -36,6 +38,8 @@ flowchart LR
 ````
 
 图表渲染失败时会显示错误提示，并保留原始图表源码，方便继续调整。
+
+> 说明：当前工具不会直接打开 draw.io 或 Figma；它在单文件预览器内使用 Mermaid 生成可检查图。需要 `.drawio`、SVG 或 Figma 可编辑图层时，适合走 office-agent-kit 的专业交付链路。
 
 ### 文本框线图
 

@@ -294,9 +294,13 @@
             padding: 16px;
             border: 1px solid var(--border);
             border-radius: 8px;
-            background: #fff;
+            background: #fbfbfd;
             overflow-x: auto;
         }
+        #preview .diagram-wrapper[data-diagram-style="architecture"] { background: #f8fafc; }
+        #preview .diagram-wrapper[data-diagram-style="process"] { background: #fbfcff; }
+        #preview .diagram-wrapper[data-diagram-style="sequence"] { background: #fcfbff; }
+        #preview .diagram-wrapper[data-diagram-style="data"] { background: #fbfdf9; }
         #preview .diagram-wrapper svg {
             display: block;
             max-width: 100%;
@@ -1131,7 +1135,7 @@
         return DOMPurify.sanitize(html, {
             ADD_ATTR: ['target', 'rel'],
             ADD_TAGS: ['input'],
-            ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'type', 'checked', 'disabled', 'align', 'target', 'rel', 'data-diagram']
+            ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'type', 'checked', 'disabled', 'align', 'target', 'rel', 'data-diagram', 'data-diagram-style']
         });
     }
 
@@ -1151,7 +1155,8 @@
     renderer.code = function (code, infostring) {
         const lang = (infostring || '').trim().split(/\s+/)[0].toLowerCase();
         if (/^(mermaid|mmd|graph|flowchart)$/.test(lang) && markdownParseDepth === 0) {
-            return '<div class="diagram-wrapper" data-diagram="mermaid"><pre class="mermaid-source">' + escapeHtml(code) + '</pre></div>';
+            const style = selectMermaidStyle(code).id;
+            return '<div class="diagram-wrapper" data-diagram="mermaid" data-diagram-style="' + style + '"><pre class="mermaid-source">' + escapeHtml(code) + '</pre></div>';
         }
         if (/^(diagram|ascii|box|tree)$/.test(lang) || ((!lang || /^(text|txt)$/.test(lang)) && looksLikeAsciiDiagram(code))) {
             return '<pre class="ascii-diagram"><code>' + escapeHtml(normalizeAsciiDiagramText(code)) + '</code></pre>';
@@ -1184,12 +1189,120 @@
         mermaid.initialize({
             startOnLoad: false,
             securityLevel: 'strict',
-            theme: 'default',
-            flowchart: { htmlLabels: false },
-            sequence: { useMaxWidth: true }
+            theme: 'base',
+            themeVariables: buildMermaidTheme('process').themeVariables,
+            flowchart: { htmlLabels: false, curve: 'basis', nodeSpacing: 42, rankSpacing: 58, padding: 12 },
+            sequence: { useMaxWidth: true, mirrorActors: false },
+            er: { useMaxWidth: true }
         });
         mermaidReady = true;
         return true;
+    }
+
+    function buildMermaidTheme(kind) {
+        const base = {
+            fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", Arial, sans-serif',
+            fontSize: '15px',
+            background: 'transparent',
+            mainBkg: '#ffffff',
+            primaryTextColor: '#172033',
+            secondaryTextColor: '#475569',
+            lineColor: '#64748b',
+            textColor: '#172033',
+            nodeBorder: '#94a3b8',
+            clusterBkg: '#f8fafc',
+            clusterBorder: '#cbd5e1',
+            edgeLabelBackground: '#ffffff',
+            tertiaryColor: '#f8fafc'
+        };
+        const variants = {
+            architecture: {
+                primaryColor: '#dbeafe',
+                primaryBorderColor: '#3b82f6',
+                primaryTextColor: '#0f172a',
+                secondaryColor: '#dcfce7',
+                tertiaryColor: '#ffedd5',
+                lineColor: '#475569',
+                clusterBkg: '#f8fafc',
+                clusterBorder: '#93c5fd'
+            },
+            process: {
+                primaryColor: '#e0f2fe',
+                primaryBorderColor: '#0284c7',
+                secondaryColor: '#fef9c3',
+                tertiaryColor: '#dcfce7',
+                lineColor: '#0f766e',
+                clusterBkg: '#f8fafc',
+                clusterBorder: '#bae6fd'
+            },
+            sequence: {
+                actorBkg: '#eef2ff',
+                actorBorder: '#6366f1',
+                actorTextColor: '#1e293b',
+                actorLineColor: '#94a3b8',
+                signalColor: '#334155',
+                signalTextColor: '#1e293b',
+                labelBoxBkgColor: '#ffffff',
+                labelBoxBorderColor: '#cbd5e1',
+                activationBkgColor: '#f8fafc',
+                activationBorderColor: '#64748b',
+                noteBkgColor: '#fff7ed',
+                noteBorderColor: '#fed7aa',
+                noteTextColor: '#431407'
+            },
+            data: {
+                primaryColor: '#ecfdf5',
+                primaryBorderColor: '#059669',
+                secondaryColor: '#eff6ff',
+                tertiaryColor: '#fefce8',
+                lineColor: '#64748b',
+                entityBkg: '#ffffff',
+                entityBorder: '#10b981',
+                attributeBackgroundColorOdd: '#ffffff',
+                attributeBackgroundColorEven: '#f8fafc'
+            },
+            minimal: {
+                primaryColor: '#f8fafc',
+                primaryBorderColor: '#64748b',
+                secondaryColor: '#ffffff',
+                tertiaryColor: '#f1f5f9',
+                lineColor: '#64748b',
+                clusterBkg: '#ffffff',
+                clusterBorder: '#cbd5e1'
+            }
+        };
+        return { theme: 'base', themeVariables: Object.assign({}, base, variants[kind] || variants.process) };
+    }
+
+    function selectMermaidStyle(source) {
+        const s = String(source || '').trim();
+        const lower = s.toLowerCase();
+        if (/^(sequencediagram)\b/i.test(s)) return { id: 'sequence', label: '时序图' };
+        if (/^(erdiagram|classdiagram)\b/i.test(s)) return { id: 'data', label: '数据/实体图' };
+        if (/(architecture-beta|subgraph|api|gateway|service|agent|worker|database|db|cache|queue|llm|server|client|chrome|planner|generator)/i.test(s)) {
+            return { id: 'architecture', label: '系统架构图' };
+        }
+        if (/^(flowchart|graph)\s+(lr|rl)\b/i.test(s) || /(start|end|process|step|review|retry|approve|reject|generate|refine)/i.test(s)) {
+            return { id: 'process', label: '流程图' };
+        }
+        if (/^(mindmap|timeline|journey|gantt)\b/i.test(s)) return { id: 'minimal', label: '信息图' };
+        return { id: 'process', label: '流程图' };
+    }
+
+    function withMermaidDesignTheme(source) {
+        const style = selectMermaidStyle(source);
+        const raw = String(source || '');
+        if (/^\s*%%\{init:/i.test(raw)) return { source: raw, style };
+        const config = Object.assign({
+            theme: 'base',
+            flowchart: { htmlLabels: false, curve: style.id === 'architecture' ? 'basis' : 'linear', nodeSpacing: 42, rankSpacing: 58, padding: 12 },
+            sequence: { useMaxWidth: true, mirrorActors: false },
+            er: { useMaxWidth: true }
+        }, buildMermaidTheme(style.id));
+        return {
+            source: '%%{init: ' + JSON.stringify(config) + '}%%\n' + raw,
+            style
+        };
     }
 
     async function renderMermaidDiagrams(seq) {
@@ -1214,8 +1327,10 @@
             const source = sourceEl ? sourceEl.textContent : '';
             if (!source.trim()) continue;
             try {
+                const themed = withMermaidDesignTheme(source);
+                block.setAttribute('data-diagram-style', themed.style.id);
                 const id = 'mermaid-' + Date.now() + '-' + seq + '-' + i;
-                const result = await mermaid.render(id, source);
+                const result = await mermaid.render(id, themed.source);
                 if (seq !== diagramRenderSeq) return;
                 block.innerHTML = result.svg;
             } catch (err) {
