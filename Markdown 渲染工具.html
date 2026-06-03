@@ -1427,12 +1427,14 @@
 
     // ========== 搜索 ==========
     let editorMatches = [], editorIdx = -1;
+    let editorSearchSnapshot = { term: '', text: '' };
 
     function searchEditor() {
         const term = document.getElementById('editorSearchInput').value;
         const text = editor.value;
         editorMatches = [];
         editorIdx = -1;
+        editorSearchSnapshot = { term, text };
         if (!term) {
             document.getElementById('editorSearchCount').textContent = '0/0';
             return;
@@ -1446,14 +1448,48 @@
             editorMatches.length ? '0/' + editorMatches.length : '0/0';
     }
 
+    function ensureEditorSearchResults() {
+        const term = document.getElementById('editorSearchInput').value;
+        if (
+            term !== editorSearchSnapshot.term ||
+            editor.value !== editorSearchSnapshot.text ||
+            (term && !editorMatches.length)
+        ) {
+            searchEditor();
+        }
+        return Boolean(term && editorMatches.length);
+    }
+
+    function scrollEditorToSelection(index) {
+        const before = editor.value.slice(0, index);
+        const line = before.split('\n').length - 1;
+        const styles = typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(editor) : null;
+        const lineHeightValue = styles ? parseFloat(styles.lineHeight) : 0;
+        const lineHeight = Number.isFinite(lineHeightValue) && lineHeightValue > 0 ? lineHeightValue : 22;
+        const targetTop = Math.max(0, line * lineHeight - editor.clientHeight * 0.45);
+        editor.scrollTop = targetTop;
+    }
+
     function jumpEditor(backward) {
-        if (!editorMatches.length) return;
+        if (!ensureEditorSearchResults()) {
+            document.getElementById('editorSearchCount').textContent = '0/0';
+            return;
+        }
         editorIdx = backward
             ? (editorIdx - 1 + editorMatches.length) % editorMatches.length
             : (editorIdx + 1) % editorMatches.length;
         const term = document.getElementById('editorSearchInput').value;
+        const start = editorMatches[editorIdx];
+        const end = start + term.length;
         editor.focus();
-        editor.setSelectionRange(editorMatches[editorIdx], editorMatches[editorIdx] + term.length);
+        editor.setSelectionRange(start, end);
+        scrollEditorToSelection(start);
+        const restoreSelection = () => {
+            editor.focus();
+            editor.setSelectionRange(start, end);
+        };
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(restoreSelection);
+        else setTimeout(restoreSelection, 0);
         document.getElementById('editorSearchCount').textContent =
             (editorIdx + 1) + '/' + editorMatches.length;
     }
