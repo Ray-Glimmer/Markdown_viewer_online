@@ -2,7 +2,7 @@
 
 ## 打开方式
 
-双击或在浏览器中打开 `Markdown 渲染工具.html`（需联网加载 marked / DOMPurify / highlight.js CDN）。
+双击或在浏览器中打开 `Markdown 渲染工具.html`（需联网加载 marked / DOMPurify / highlight.js / Mermaid CDN）。
 
 ## 30 秒示例
 
@@ -17,6 +17,21 @@
 | 宽容模式 | 预处理修复后再渲染 | 仅规范化换行，严格解析 |
 | 智能换行 | ① 一行内的 `##` / `###` / 列表 / `---` 自动拆行；② 段内单个 `\n` 显示为换行 | 不拆结构行；段内换行合并为段落 |
 | `` ```markdown `` 块 | 围栏内 Markdown **渲染为预览**（虚线框区域） | 显示为高亮源码 |
+| `` ```mermaid `` 块 | 围栏内源码渲染为流程图、框架图、时序图等 | Mermaid 加载失败或语法错误时显示源码回退 |
+
+## 绘图说明
+
+支持 Mermaid 文本图表，常用语言名包括 `mermaid`、`mmd`、`graph`、`flowchart`。修改左侧代码块源码后，右侧图表会随即时预览重新绘制。
+
+````markdown
+```mermaid
+flowchart LR
+  A[输入 Markdown] --> B[预处理]
+  B --> C[渲染预览]
+```
+````
+
+图表渲染失败时会显示错误提示，并保留原始图表源码，方便继续调整。
 
 ## 表格说明
 
@@ -38,6 +53,7 @@
 ## 已知限制
 
 - 依赖 CDN，离线首次打开可能无法渲染
+- Mermaid 图表依赖 Mermaid CDN；未加载时会回退显示源码
 - 不执行 Markdown 内嵌 HTML 脚本（经 DOMPurify 过滤）
 - 超大文档（>约 2MB）可能卡顿
 

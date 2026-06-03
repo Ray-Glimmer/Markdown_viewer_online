@@ -271,6 +271,33 @@
         #preview .md-embed > :last-child { margin-bottom: 0; }
         #preview .md-embed .table-wrapper { margin: 0.75em 0; }
 
+        #preview .diagram-wrapper {
+            margin: 1em 0;
+            padding: 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #fff;
+            overflow-x: auto;
+        }
+        #preview .diagram-wrapper svg {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            margin: 0 auto;
+        }
+        #preview .diagram-error {
+            margin-bottom: 10px;
+            padding: 8px 10px;
+            color: #8a1f11;
+            background: #fff1ef;
+            border: 1px solid #ffd3cc;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        #preview .diagram-wrapper pre {
+            margin: 0;
+        }
+
         #preview.preview-empty::before {
             content: "预览区：输入左侧 Markdown 后在此显示";
             color: var(--text-secondary);
@@ -399,6 +426,7 @@
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <script>
 (function () {
     'use strict';
@@ -428,6 +456,8 @@
     let renderDebounce = null;
     let saveDebounce = null;
     let toastTimer = null;
+    let diagramRenderSeq = 0;
+    let mermaidReady = false;
 
     function showToast(msg) {
         toastEl.textContent = msg;
@@ -922,7 +952,7 @@
         return DOMPurify.sanitize(html, {
             ADD_ATTR: ['target', 'rel'],
             ADD_TAGS: ['input'],
-            ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'type', 'checked', 'disabled', 'align', 'target', 'rel']
+            ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'type', 'checked', 'disabled', 'align', 'target', 'rel', 'data-diagram']
         });
     }
 
@@ -941,6 +971,9 @@
 
     renderer.code = function (code, infostring) {
         const lang = (infostring || '').trim().split(/\s+/)[0].toLowerCase();
+        if (/^(mermaid|mmd|graph|flowchart)$/.test(lang) && markdownParseDepth === 0) {
+            return '<div class="diagram-wrapper" data-diagram="mermaid"><pre class="mermaid-source">' + escapeHtml(code) + '</pre></div>';
+        }
         if (/^(markdown|md|gfm)$/.test(lang) && markdownParseDepth === 0) {
             try {
                 return '<div class="md-embed">' + parseMarkdownFragment(code, 1) + '</div>';
@@ -963,6 +996,53 @@
         const langClass = lang ? ' language-' + lang : '';
         return '<pre class="hljs"><code class="hljs' + langClass + '">' + highlighted + '</code></pre>';
     };
+
+    function initMermaid() {
+        if (mermaidReady || typeof mermaid === 'undefined') return mermaidReady;
+        mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'strict',
+            theme: 'default',
+            flowchart: { htmlLabels: false },
+            sequence: { useMaxWidth: true }
+        });
+        mermaidReady = true;
+        return true;
+    }
+
+    async function renderMermaidDiagrams(seq) {
+        const blocks = Array.from(preview.querySelectorAll('.diagram-wrapper[data-diagram="mermaid"]'));
+        if (!blocks.length) return;
+        if (!initMermaid()) {
+            blocks.forEach(block => {
+                if (block.querySelector('.diagram-error')) return;
+                const err = document.createElement('div');
+                err.className = 'diagram-error';
+                err.textContent = 'Mermaid 未加载，已显示图表源码。';
+                block.insertBefore(err, block.firstChild);
+            });
+            updateStatus((lastFixNotes || []).concat(['Mermaid 未加载，图表以源码显示']));
+            return;
+        }
+
+        for (let i = 0; i < blocks.length; i++) {
+            if (seq !== diagramRenderSeq) return;
+            const block = blocks[i];
+            const sourceEl = block.querySelector('.mermaid-source');
+            const source = sourceEl ? sourceEl.textContent : '';
+            if (!source.trim()) continue;
+            try {
+                const id = 'mermaid-' + Date.now() + '-' + seq + '-' + i;
+                const result = await mermaid.render(id, source);
+                if (seq !== diagramRenderSeq) return;
+                block.innerHTML = result.svg;
+            } catch (err) {
+                if (seq !== diagramRenderSeq) return;
+                const fallback = sourceEl ? sourceEl.outerHTML : '<pre>' + escapeHtml(source) + '</pre>';
+                block.innerHTML = '<div class="diagram-error">图表语法解析失败：' + escapeHtml(err.message || String(err)) + '</div>' + fallback;
+            }
+        }
+    }
 
     function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, m =>
@@ -1029,6 +1109,7 @@
     }
 
     function doRender() {
+        const seq = ++diagramRenderSeq;
         const empty = !editor.value.trim();
         preview.classList.toggle('preview-empty', empty);
         if (empty) {
@@ -1039,6 +1120,7 @@
         const { html, notes } = renderMarkdown(editor.value);
         preview.innerHTML = html;
         updateStatus(notes);
+        renderMermaidDiagrams(seq);
     }
 
     function scheduleRender() {
@@ -1140,7 +1222,7 @@
             return;
         }
         const body = preview.classList.contains('preview-empty') ? renderMarkdown(editor.value).html : preview.innerHTML;
-        const doc = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Markdown 导出</title><style>body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;line-height:1.6}pre{overflow:auto;background:#f6f8fa;padding:1rem;border-radius:8px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px}</style></head><body>' + body + '</body></html>';
+        const doc = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Markdown 导出</title><style>body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;line-height:1.6}pre{overflow:auto;background:#f6f8fa;padding:1rem;border-radius:8px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px}.diagram-wrapper{margin:1em 0;padding:16px;border:1px solid #ddd;border-radius:8px;overflow-x:auto}.diagram-wrapper svg{display:block;max-width:100%;height:auto;margin:0 auto}</style></head><body>' + body + '</body></html>';
         const blob = new Blob([doc], { type: 'text/html;charset=utf-8' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -1322,6 +1404,16 @@ greet("World");
 | 功能 | 状态 | 说明 |
 | 搜索 | 可用 | Enter 跳转 |
 | 渲染 | 稳定 | GFM + 预处理 |
+
+## 框架图（Mermaid）
+\`\`\`mermaid
+flowchart LR
+  A[Markdown 源码] --> B[预处理]
+  B --> C[marked 渲染]
+  C --> D{代码块类型}
+  D -->|mermaid| E[绘制框架图]
+  D -->|其他语言| F[代码高亮]
+\`\`\`
 
 ---
 
