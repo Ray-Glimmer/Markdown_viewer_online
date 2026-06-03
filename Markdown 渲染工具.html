@@ -748,37 +748,36 @@
         return parts;
     }
 
-    function simplifyFlowNodeLabel(label) {
+    function splitChainNodeDetail(label) {
         let s = String(label || '').trim();
         s = s.replace(/\s+/g, ' ');
-        if (s.length > 64 && /[（(]/.test(s)) {
-            const main = s.split(/[（(]/)[0].trim();
-            const detail = (s.match(/[（(]([\s\S]+)[）)]/) || [])[1] || '';
-            const steps = detail
-                .split(/\s*(?:→|->|=>|⇒)\s*/)
-                .map(x => x.trim())
-                .filter(Boolean)
-                .slice(0, 5)
-                .join(' → ');
-            if (main && steps) s = main + '\\n' + steps;
-        }
-        return s.length > 96 ? s.slice(0, 93) + '...' : s;
+        const m = s.match(/^(.+?)[（(]([\s\S]+)[）)]$/);
+        if (!m) return { main: s, detail: '' };
+        const detail = m[2]
+            .split(/\s*(?:→|->|=>|⇒)\s*/)
+            .map(x => x.trim())
+            .filter(Boolean)
+            .join(' → ');
+        return { main: m[1].trim(), detail };
     }
 
     function escapeMermaidLabel(label) {
-        return simplifyFlowNodeLabel(label)
+        const node = splitChainNodeDetail(label);
+        const s = node.detail ? node.main + '\\n' + node.detail : node.main;
+        return s
             .replace(/\\/g, '\\\\')
             .replace(/"/g, '\\"');
     }
 
-    function arrowChainToMermaid(text) {
+    function arrowChainToDiagram(text) {
         const parts = splitArrowChain(text);
         if (parts.length < 3) return null;
-        const lines = ['flowchart LR'];
+        const lines = [];
         parts.forEach((part, idx) => {
-            const id = 'N' + (idx + 1);
-            lines.push('  ' + id + '["' + escapeMermaidLabel(part) + '"]');
-            if (idx > 0) lines.push('  N' + idx + ' --> ' + id);
+            const node = splitChainNodeDetail(part);
+            const prefix = idx === 0 ? '• ' : '→ ';
+            lines.push(prefix + node.main);
+            if (node.detail) lines.push('  ' + node.detail);
         });
         return lines.join('\n');
     }
@@ -806,10 +805,10 @@
 
             const code = block.join('\n');
             const canNormalize = !lang || /^(text|txt|flow|chain|diagram)$/.test(lang);
-            const mermaid = canNormalize && hasArrowChain(code) ? arrowChainToMermaid(code) : null;
-            if (mermaid) {
-                out.push(lines[i].replace(/^(```|~~~).*$/, '$1mermaid'));
-                out.push(...mermaid.split('\n'));
+            const diagram = canNormalize && hasArrowChain(code) ? arrowChainToDiagram(code) : null;
+            if (diagram) {
+                out.push(lines[i].replace(/^(```|~~~).*$/, '$1diagram'));
+                out.push(...diagram.split('\n'));
                 if (j < lines.length) out.push(lines[j]);
                 i = j;
                 changed = true;
@@ -824,7 +823,7 @@
                 i = j - 1;
             }
         }
-        if (changed) FixNotes.push(notes, '已将箭头链路转换为流程图');
+        if (changed) FixNotes.push(notes, '已整理长箭头链路');
         return out.join('\n');
     }
 
