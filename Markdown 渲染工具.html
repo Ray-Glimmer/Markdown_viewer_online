@@ -782,6 +782,59 @@
         return lines.join('\n');
     }
 
+    function unescapeMermaidLabel(label) {
+        return String(label || '')
+            .replace(/\\n/g, '\n')
+            .replace(/\\"/g, '"')
+            .replace(/\\\\/g, '\\');
+    }
+
+    function generatedMermaidChainToDiagram(code) {
+        const raw = String(code || '');
+        if (!/^\s*flowchart\s+(LR|RL|TB|TD|BT)\b/i.test(raw)) return null;
+
+        const nodes = new Map();
+        const edges = [];
+        let body = raw.replace(/^\s*flowchart\s+(LR|RL|TB|TD|BT)\b[^\n]*\n?/i, '\n');
+
+        for (const m of body.matchAll(/(^|\n)\s*(N\d+)\s*\[\s*"([\s\S]*?)"\s*\]/g)) {
+            const id = m[2];
+            const label = m[3];
+            nodes.set(id, unescapeMermaidLabel(label));
+        }
+        for (const m of body.matchAll(/(^|\n)\s*(N\d+)\s*-->\s*(N\d+)\s*(?=\n|$)/g)) {
+            edges.push([m[2], m[3]]);
+        }
+        body = body
+            .replace(/(^|\n)\s*N\d+\s*\[\s*"[\s\S]*?"\s*\]/g, '\n')
+            .replace(/^\s*N\d+\s*-->\s*N\d+\s*$/gm, '')
+            .replace(/^\s*%%.*$/gm, '')
+            .trim();
+        if (body) {
+            return null;
+        }
+
+        if (nodes.size < 3 || edges.length !== nodes.size - 1) return null;
+        const ordered = [];
+        for (let i = 1; i <= nodes.size; i++) {
+            const id = 'N' + i;
+            if (!nodes.has(id)) return null;
+            ordered.push(nodes.get(id));
+        }
+        for (let i = 1; i < ordered.length; i++) {
+            if (!edges.some(([from, to]) => from === 'N' + i && to === 'N' + (i + 1))) return null;
+        }
+
+        const out = [];
+        ordered.forEach((label, idx) => {
+            const parts = label.split('\n').map(x => x.trim()).filter(Boolean);
+            const prefix = idx === 0 ? '• ' : '→ ';
+            out.push(prefix + (parts[0] || '节点 ' + (idx + 1)));
+            parts.slice(1).forEach(detail => out.push('  ' + detail));
+        });
+        return out.join('\n');
+    }
+
     function normalizeArrowChainFences(text, notes) {
         const lines = text.split('\n');
         const out = [];
@@ -804,8 +857,13 @@
             }
 
             const code = block.join('\n');
-            const canNormalize = !lang || /^(text|txt|flow|chain|diagram)$/.test(lang);
-            const diagram = canNormalize && hasArrowChain(code) ? arrowChainToDiagram(code) : null;
+            let diagram = null;
+            if (/^(mermaid|mmd|graph|flowchart)$/.test(lang)) {
+                diagram = generatedMermaidChainToDiagram(code);
+            } else {
+                const canNormalize = !lang || /^(text|txt|flow|chain|diagram)$/.test(lang);
+                diagram = canNormalize && hasArrowChain(code) ? arrowChainToDiagram(code) : null;
+            }
             if (diagram) {
                 out.push(lines[i].replace(/^(```|~~~).*$/, '$1diagram'));
                 out.push(...diagram.split('\n'));
