@@ -46,8 +46,7 @@
             gap: 12px;
             flex-wrap: wrap;
         }
-        .header-title { font-weight: 600; font-size: 18px; color: var(--apple-blue); letter-spacing: -0.3px; }
-        .header-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+        .header-title { font-weight: 600; font-size: 18px; color: var(--apple-blue); letter-spacing: 0; }
 
         .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .btn {
@@ -83,7 +82,6 @@
             border-bottom: 1px solid var(--border);
             flex-shrink: 0;
         }
-        .status-bar .fixed { color: var(--success); }
 
         .editor-area { display: flex; flex: 1; overflow: hidden; min-height: 0; }
         .pane { flex: 1; display: flex; flex-direction: column; position: relative; overflow: hidden; min-width: 0; }
@@ -398,16 +396,15 @@
     <div class="header">
         <div>
             <div class="header-title">Markdown 渲染工具</div>
-            <div class="header-sub">宽容解析 · 自动修复 · 清晰排版</div>
         </div>
         <div class="toolbar">
             <label class="toggle-label" title="自动修复残缺语法后再渲染">
                 <input type="checkbox" id="tolerantMode" checked>
-                宽容模式
+                容错
             </label>
             <label class="toggle-label" title="结构拆行（##、###、列表、---）+ 段内单换行保留为换行">
                 <input type="checkbox" id="reflowStructure" checked>
-                智能换行
+                换行
             </label>
             <button type="button" class="btn btn-primary" id="btnFormat">格式化</button>
             <button type="button" class="btn" id="btnOpen" title="Ctrl+O">打开</button>
@@ -419,22 +416,22 @@
             <button type="button" class="btn" id="btnClear">清空</button>
         </div>
     </div>
-    <div class="status-bar" id="statusBar">就绪<span class="stats" id="statusStats"></span></div>
+    <div class="status-bar" id="statusBar">0 行 · 0 字</div>
     <div class="editor-area" id="editorArea">
         <div class="pane pane-editor">
             <div class="drop-overlay" id="dropOverlay">松开以导入 Markdown 文件</div>
             <div class="search-box">
-                <input type="text" class="search-input" placeholder="搜索源码 (Enter 跳转)..." id="editorSearchInput" autocomplete="off">
+                <input type="text" class="search-input" placeholder="搜源码" id="editorSearchInput" autocomplete="off">
                 <span class="search-info" id="editorSearchCount">0/0</span>
                 <button type="button" class="search-btn" id="editorSearchPrev" title="上一个 (Shift+Enter)">↑</button>
                 <button type="button" class="search-btn" id="editorSearchBtn" title="下一个 (Enter)">↓</button>
             </div>
-            <textarea id="editor" spellcheck="false" placeholder="在此输入 Markdown，支持残缺语法自动修复；可拖放 .md 文件…"></textarea>
+            <textarea id="editor" spellcheck="false" placeholder="输入或拖入 Markdown"></textarea>
         </div>
         <div class="pane-resizer" id="paneResizer" title="拖动调整宽度"></div>
         <div class="pane">
             <div class="search-box">
-                <input type="text" class="search-input" placeholder="搜索预览 (Enter 跳转)..." id="previewSearchInput" autocomplete="off">
+                <input type="text" class="search-input" placeholder="搜预览" id="previewSearchInput" autocomplete="off">
                 <span class="search-info" id="previewSearchCount">0/0</span>
                 <button type="button" class="search-btn" id="previewSearchPrev" title="上一个 (Shift+Enter)">↑</button>
                 <button type="button" class="search-btn" id="previewSearchBtn" title="下一个 (Enter)">↓</button>
@@ -456,7 +453,6 @@
     const editor = document.getElementById('editor');
     const preview = document.getElementById('preview');
     const statusBar = document.getElementById('statusBar');
-    const statusStats = document.getElementById('statusStats');
     const tolerantMode = document.getElementById('tolerantMode');
     const reflowStructure = document.getElementById('reflowStructure');
     const toastEl = document.getElementById('toast');
@@ -1386,23 +1382,15 @@
         return { html, notes, normalized: text };
     }
 
-    function updateStats() {
+    function getStatsText() {
         const v = editor.value;
-        const el = document.getElementById('statusStats');
-        if (!el) return;
-        if (!v) { el.textContent = ''; return; }
-        el.textContent = ' · ' + v.split('\n').length + ' 行 · ' + v.length + ' 字';
+        if (!v) return '0 行 · 0 字';
+        return v.split('\n').length + ' 行 · ' + v.length + ' 字';
     }
 
     function updateStatus(notes) {
-        updateStats();
-        const msg = notes.length
-            ? '<span class="fixed">已自动修复：</span> ' + notes.join('；')
-            : '就绪 · 输入即时预览';
-        const statsEl = document.getElementById('statusStats');
-        const statsHtml = statsEl ? statsEl.outerHTML : '<span class="stats" id="statusStats"></span>';
-        statusBar.innerHTML = msg + statsHtml;
-        updateStats();
+        const suffix = notes && notes.length ? ' · 修复 ' + notes.length + ' 项' : '';
+        statusBar.textContent = getStatsText() + suffix;
     }
 
     function doRender() {
@@ -1495,14 +1483,14 @@
     }
 
     let previewMatches = [], previewIdx = -1;
-    let basePreviewHtml = '';
+    let previewSearchSnapshot = { term: '', source: '' };
 
     function searchPreview() {
         const term = document.getElementById('previewSearchInput').value;
         doRender();
-        basePreviewHtml = preview.innerHTML;
         previewMatches = [];
         previewIdx = -1;
+        previewSearchSnapshot = { term, source: editor.value };
 
         if (!term) {
             document.getElementById('previewSearchCount').textContent = '0/0';
@@ -1538,8 +1526,23 @@
             previewMatches.length ? '0/' + previewMatches.length : '0/0';
     }
 
+    function ensurePreviewSearchResults() {
+        const term = document.getElementById('previewSearchInput').value;
+        if (
+            term !== previewSearchSnapshot.term ||
+            editor.value !== previewSearchSnapshot.source ||
+            (term && !previewMatches.length)
+        ) {
+            searchPreview();
+        }
+        return Boolean(term && previewMatches.length);
+    }
+
     function jumpPreview(backward) {
-        if (!previewMatches.length) return;
+        if (!ensurePreviewSearchResults()) {
+            document.getElementById('previewSearchCount').textContent = '0/0';
+            return;
+        }
         previewIdx = backward
             ? (previewIdx - 1 + previewMatches.length) % previewMatches.length
             : (previewIdx + 1) % previewMatches.length;
@@ -1618,8 +1621,8 @@
         editor.value = text;
         doRender();
         scheduleSave();
-        updateStatus(notes.length ? notes : ['已格式化源码']);
-        showToast('已格式化');
+        updateStatus(notes);
+        showToast(notes.length ? '已格式化并修复 ' + notes.length + ' 项' : '已格式化');
     });
 
     document.getElementById('btnOpen').addEventListener('click', () => fileInput.click());
