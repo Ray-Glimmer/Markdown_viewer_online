@@ -633,6 +633,73 @@
         return next;
     }
 
+    function isMermaidStartLine(line) {
+        const t = line.trim();
+        return /^(flowchart|graph)\s+(TB|TD|BT|LR|RL)\b/i.test(t) ||
+            /^(sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|journey|gitGraph|mindmap|timeline|quadrantChart|sankey-beta|xychart-beta|block-beta|packet-beta|architecture-beta)\b/i.test(t) ||
+            /^pie\b(?:\s+title\b)?/i.test(t);
+    }
+
+    function isMermaidContinuationLine(line, mode) {
+        const t = line.trim();
+        if (!t) return false;
+        if (/^(```|~~~|#{1,6}\s|[-*+]\s+|\d+\.\s+|>\s|\|)/.test(t)) return false;
+        if (/^(flowchart|graph)\s+(TB|TD|BT|LR|RL)\b/i.test(t)) return false;
+        if (/^(sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|journey|gitGraph|mindmap|timeline|quadrantChart|sankey-beta|xychart-beta|block-beta|packet-beta|architecture-beta)\b/i.test(t)) return false;
+        if (/^pie\b(?:\s+title\b)?/i.test(t)) return false;
+
+        if (/^%%/.test(t)) return true;
+        if (/^(subgraph|end|direction|title|section|dateFormat|axisFormat|tickInterval|accTitle|accDescr|classDef|class|style|linkStyle|click|state|note|participant|actor|activate|deactivate|autonumber|loop|alt|opt|par|critical|break|rect|and|else)\b/i.test(t)) return true;
+        if (/^(\[\*\]|[*])\s*--?>/.test(t)) return true;
+        if (/(-->|---|->>|-->>|->|--x|-x|-.->|==>|<--|<\|--|\*--|o--|\.\.|\|--\|)/.test(t)) return true;
+        if (/^[A-Za-z0-9_\u4e00-\u9fa5][\w\u4e00-\u9fa5 .-]*\s*:\s*.+/.test(t)) return true;
+        if (/^[A-Za-z0-9_\u4e00-\u9fa5][\w\u4e00-\u9fa5-]*(\[[^\]]+\]|\([^)]+\)|\{[^}]+\}|\(\([^)]+\)\)|>\s*.+)/.test(t)) return true;
+        if (/^\s{2,}\S/.test(line) && /^(mindmap|timeline|architecture-beta|block-beta)$/i.test(mode || '')) return true;
+        return false;
+    }
+
+    function autoFenceMermaidDiagrams(text, notes) {
+        const lines = text.split('\n');
+        const out = [];
+        let changed = false;
+        let inFence = false;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const t = line.trim();
+            if (/^```/.test(t) || /^~~~/.test(t)) {
+                inFence = !inFence;
+                out.push(line);
+                continue;
+            }
+            if (inFence || !isMermaidStartLine(line)) {
+                out.push(line);
+                continue;
+            }
+
+            const mode = (t.match(/^([A-Za-z-]+)/) || [])[1] || '';
+            const block = [line];
+            let j = i + 1;
+            while (j < lines.length && isMermaidContinuationLine(lines[j], mode)) {
+                block.push(lines[j]);
+                j++;
+            }
+
+            if (block.length > 1) {
+                if (out.length && out[out.length - 1].trim()) out.push('');
+                out.push('```mermaid', ...block, '```');
+                if (j < lines.length && lines[j].trim()) out.push('');
+                i = j - 1;
+                changed = true;
+            } else {
+                out.push(line);
+            }
+        }
+
+        if (changed) FixNotes.push(notes, '已识别并包裹 Mermaid 框架图');
+        return out.join('\n');
+    }
+
     function trimTrailingSpaces(text) {
         return text.split('\n').map(line => line.replace(/[ \t]+$/g, '')).join('\n');
     }
@@ -868,9 +935,19 @@
         const lines = text.split('\n');
         const out = [];
         let merged = false;
+        let inFence = false;
         for (let i = 0; i < lines.length; i++) {
             const cur = lines[i];
             const trimmed = cur.trim();
+            if (/^```/.test(trimmed) || /^~~~/.test(trimmed)) {
+                inFence = !inFence;
+                out.push(cur);
+                continue;
+            }
+            if (inFence) {
+                out.push(cur);
+                continue;
+            }
             if (
                 trimmed &&
                 i + 1 < lines.length &&
@@ -910,6 +987,7 @@
         }
         text = trimTrailingSpaces(text);
         text = collapseExcessiveBlankLines(text, notes);
+        text = autoFenceMermaidDiagrams(text, notes);
 
         if (options.mergeBrokenLines) {
             text = mergeSingleLineBreaks(text, notes);

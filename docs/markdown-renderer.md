@@ -18,10 +18,13 @@
 | 智能换行 | ① 一行内的 `##` / `###` / 列表 / `---` 自动拆行；② 段内单个 `\n` 显示为换行 | 不拆结构行；段内换行合并为段落 |
 | `` ```markdown `` 块 | 围栏内 Markdown **渲染为预览**（虚线框区域） | 显示为高亮源码 |
 | `` ```mermaid `` 块 | 围栏内源码渲染为流程图、框架图、时序图等 | Mermaid 加载失败或语法错误时显示源码回退 |
+| 裸 Mermaid 图表 | 自动补成 `` ```mermaid `` 代码块后渲染 | 按普通文本/代码处理 |
 
 ## 绘图说明
 
 支持 Mermaid 文本图表，常用语言名包括 `mermaid`、`mmd`、`graph`、`flowchart`。修改左侧代码块源码后，右侧图表会随即时预览重新绘制。
+
+粘贴内容中如果出现未加代码围栏的 Mermaid 图表，例如以 `flowchart LR`、`graph TD`、`sequenceDiagram`、`classDiagram`、`stateDiagram-v2`、`erDiagram` 等开头的连续图表语句，宽容模式和格式化会自动补成 `mermaid` 代码块。
 
 ````markdown
 ```mermaid
