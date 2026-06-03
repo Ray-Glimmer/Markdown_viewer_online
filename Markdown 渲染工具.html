@@ -595,6 +595,14 @@
         return next;
     }
 
+    function splitJoinedTableRows(text, notes) {
+        const next = text
+            .replace(/(\|[ \t:|-]+\|)[ \t]*[；;][ \t]*(?=\|?[ \t:|-]+\|)/g, '$1\n')
+            .replace(/(\|[^\n|]+\|(?:[^\n|]*\|)+)[ \t]*[；;][ \t]*(?=\|)/g, '$1\n');
+        if (next !== text) FixNotes.push(notes, '已拆分粘连的表格行');
+        return next;
+    }
+
     function trimTrailingSpaces(text) {
         return text.split('\n').map(line => line.replace(/[ \t]+$/g, '')).join('\n');
     }
@@ -731,9 +739,58 @@
         return '| ' + Array(cols).fill('---').join(' | ') + ' |';
     }
 
+    function normalizeTableRow(line, colCount) {
+        const cells = splitTableCells(line);
+        while (colCount && cells.length < colCount) cells.push('');
+        const kept = colCount ? cells.slice(0, colCount) : cells;
+        return '| ' + kept.join(' | ') + ' |';
+    }
+
+    function normalizeTableSeparator(line, colCount) {
+        const cells = splitTableCells(line);
+        const cols = Math.max(colCount || cells.length, 1);
+        const normalized = [];
+        for (let i = 0; i < cols; i++) {
+            const cell = cells[i] || '---';
+            const left = cell.startsWith(':');
+            const right = cell.endsWith(':');
+            normalized.push((left ? ':' : '') + '---' + (right ? ':' : ''));
+        }
+        return '| ' + normalized.join(' | ') + ' |';
+    }
+
+    function normalizeTableBlock(block) {
+        const firstDataIndex = block.findIndex(line => !isTableSeparator(line));
+        if (firstDataIndex === -1) return { lines: block, changed: false, inserted: false, removed: false };
+
+        const header = block[firstDataIndex];
+        const colCount = Math.max(splitTableCells(header).length, 1);
+        const separatorIndex = block.findIndex((line, idx) => idx > firstDataIndex && isTableSeparator(line));
+        const separator = separatorIndex === -1 ? inferTableSeparator(header) : normalizeTableSeparator(block[separatorIndex], colCount);
+        const dataRows = block
+            .slice(firstDataIndex + 1)
+            .filter(line => !isTableSeparator(line))
+            .map(line => normalizeTableRow(line, colCount));
+
+        const lines = [
+            normalizeTableRow(header, colCount),
+            separator,
+            ...dataRows
+        ];
+        const changed = lines.join('\n') !== block.join('\n');
+        return {
+            lines,
+            changed,
+            inserted: separatorIndex === -1 && dataRows.length > 0,
+            removed: block.some((line, idx) => idx !== separatorIndex && idx !== firstDataIndex && isTableSeparator(line)) || firstDataIndex > 0
+        };
+    }
+
     function fixTables(lines, notes) {
         const out = [];
         let inserted = false;
+        let normalized = false;
+        let removed = false;
         let inFence = false;
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
@@ -747,18 +804,25 @@
                 out.push(line);
                 continue;
             }
-            out.push(line);
-            if (!looksLikeTableRow(line) || isTableSeparator(line)) continue;
-            const prev = lines[i - 1];
-            const isBlockStart = i === 0 || !looksLikeTableRow(prev) || isTableSeparator(prev);
-            if (!isBlockStart) continue;
-            const next = lines[i + 1];
-            if (next !== undefined && looksLikeTableRow(next) && !isTableSeparator(next)) {
-                out.push(inferTableSeparator(line));
-                inserted = true;
+            if (!looksLikeTableRow(line)) {
+                out.push(line);
+                continue;
             }
+            const block = [];
+            while (i < lines.length && looksLikeTableRow(lines[i])) {
+                block.push(lines[i]);
+                i++;
+            }
+            i--;
+            const fixed = normalizeTableBlock(block);
+            out.push(...fixed.lines);
+            inserted = inserted || fixed.inserted;
+            normalized = normalized || fixed.changed;
+            removed = removed || fixed.removed;
         }
         if (inserted) FixNotes.push(notes, '已为表格补全分隔行');
+        if (removed) FixNotes.push(notes, '已移除重复的表格分隔行');
+        if (normalized) FixNotes.push(notes, '已规范化表格管道与列数');
         return out;
     }
 
@@ -810,6 +874,7 @@
         text = decodeLiteralEscapes(text, notes);
         text = normalizeTaskCheckboxes(text, notes);
         text = normalizeFullWidthSpacesInMarkers(text, notes);
+        text = splitJoinedTableRows(text, notes);
         if (options.reflowStructure !== false) {
             text = reflowInlineMarkdownStructure(text, notes);
         }
