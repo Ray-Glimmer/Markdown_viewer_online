@@ -718,6 +718,116 @@
         return out.join('\n');
     }
 
+    function hasArrowChain(text) {
+        const s = String(text || '');
+        const arrows = s.match(/(?:→|->|=>|⇒)/g) || [];
+        return arrows.length >= 2 && !/^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram)\b/i.test(s.trim());
+    }
+
+    function splitArrowChain(text) {
+        const source = String(text || '')
+            .replace(/\r\n?/g, '\n')
+            .replace(/\s*\n\s*(?=(?:→|->|=>|⇒)\s*)/g, ' ');
+        const parts = [];
+        let buf = '';
+        let depth = 0;
+        for (let i = 0; i < source.length; i++) {
+            const ch = source[i];
+            const two = source.slice(i, i + 2);
+            if (ch === '(' || ch === '（' || ch === '[' || ch === '【') depth++;
+            if (ch === ')' || ch === '）' || ch === ']' || ch === '】') depth = Math.max(0, depth - 1);
+            if (depth === 0 && (ch === '→' || ch === '⇒' || two === '->' || two === '=>')) {
+                if (buf.trim()) parts.push(buf.trim());
+                buf = '';
+                if (two === '->' || two === '=>') i++;
+                continue;
+            }
+            buf += ch;
+        }
+        if (buf.trim()) parts.push(buf.trim());
+        return parts;
+    }
+
+    function simplifyFlowNodeLabel(label) {
+        let s = String(label || '').trim();
+        s = s.replace(/\s+/g, ' ');
+        if (s.length > 64 && /[（(]/.test(s)) {
+            const main = s.split(/[（(]/)[0].trim();
+            const detail = (s.match(/[（(]([\s\S]+)[）)]/) || [])[1] || '';
+            const steps = detail
+                .split(/\s*(?:→|->|=>|⇒)\s*/)
+                .map(x => x.trim())
+                .filter(Boolean)
+                .slice(0, 5)
+                .join(' → ');
+            if (main && steps) s = main + '\\n' + steps;
+        }
+        return s.length > 96 ? s.slice(0, 93) + '...' : s;
+    }
+
+    function escapeMermaidLabel(label) {
+        return simplifyFlowNodeLabel(label)
+            .replace(/\\/g, '\\\\')
+            .replace(/"/g, '\\"');
+    }
+
+    function arrowChainToMermaid(text) {
+        const parts = splitArrowChain(text);
+        if (parts.length < 3) return null;
+        const lines = ['flowchart LR'];
+        parts.forEach((part, idx) => {
+            const id = 'N' + (idx + 1);
+            lines.push('  ' + id + '["' + escapeMermaidLabel(part) + '"]');
+            if (idx > 0) lines.push('  N' + idx + ' --> ' + id);
+        });
+        return lines.join('\n');
+    }
+
+    function normalizeArrowChainFences(text, notes) {
+        const lines = text.split('\n');
+        const out = [];
+        let changed = false;
+        for (let i = 0; i < lines.length; i++) {
+            const opener = lines[i].trim();
+            const open = opener.match(/^(```|~~~)(.*)$/);
+            if (!open) {
+                out.push(lines[i]);
+                continue;
+            }
+
+            const fence = open[1];
+            const lang = (open[2] || '').trim().split(/\s+/)[0].toLowerCase();
+            const block = [];
+            let j = i + 1;
+            while (j < lines.length && !lines[j].trim().startsWith(fence)) {
+                block.push(lines[j]);
+                j++;
+            }
+
+            const code = block.join('\n');
+            const canNormalize = !lang || /^(text|txt|flow|chain|diagram)$/.test(lang);
+            const mermaid = canNormalize && hasArrowChain(code) ? arrowChainToMermaid(code) : null;
+            if (mermaid) {
+                out.push(lines[i].replace(/^(```|~~~).*$/, '$1mermaid'));
+                out.push(...mermaid.split('\n'));
+                if (j < lines.length) out.push(lines[j]);
+                i = j;
+                changed = true;
+                continue;
+            }
+
+            out.push(lines[i], ...block);
+            if (j < lines.length) {
+                out.push(lines[j]);
+                i = j;
+            } else {
+                i = j - 1;
+            }
+        }
+        if (changed) FixNotes.push(notes, '已将箭头链路转换为流程图');
+        return out.join('\n');
+    }
+
     function hasBoxDrawingChars(text) {
         return /[┌┐└┘├┤┬┴┼│─━┃╭╮╰╯╔╗╚╝═║╠╣╦╩╬]/.test(text);
     }
@@ -1088,6 +1198,7 @@
         text = trimTrailingSpaces(text);
         text = collapseExcessiveBlankLines(text, notes);
         text = autoFenceMermaidDiagrams(text, notes);
+        text = normalizeArrowChainFences(text, notes);
         text = normalizeAsciiDiagramFences(text, notes);
 
         if (options.mergeBrokenLines) {
